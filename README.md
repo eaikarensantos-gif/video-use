@@ -45,6 +45,24 @@ And in the session:
 
 It inventories the sources, proposes a strategy, waits for your OK, then produces `edit/final.mp4` next to your sources. All outputs live in `<videos_dir>/edit/` — the skill directory stays clean.
 
+## Visual editor (optional)
+
+video-use also ships a local, CapCut-style visual editor: a media bin, a
+real-time player, and a drag-to-trim multi-track timeline (video / text /
+overlay), with per-clip color grade, transitions, and export — all on top of
+the exact same `edit/` directory and `edl.json` the chat flow produces. Open
+it to see and adjust what Claude cut, or cut visually yourself and let Claude
+pick up from there next session.
+
+```bash
+pip install -e ".[webapp]"
+cd webapp/frontend && npm install && npm run build && cd ../..
+python webapp/backend/main.py --videos-dir /path/to/your/videos
+```
+
+Then open `http://127.0.0.1:8756`. See [`webapp/README.md`](./webapp/README.md)
+for dev mode and details.
+
 ## Manual install
 
 If you'd rather do it by hand:

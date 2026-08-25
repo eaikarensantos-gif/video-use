@@ -36,6 +36,7 @@ node_modules/
 package-lock.json
 yarn.lock
 .npm/
+*.tsbuildinfo
 
 # Manim render artifacts (when running skills/manim-video scripts locally)
 media/

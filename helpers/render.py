@@ -64,6 +64,20 @@ def run(cmd: list[str], quiet: bool = False) -> None:
     subprocess.run(cmd, check=True)
 
 
+def run_ffmpeg(cmd: list[str]) -> None:
+    """Run an ffmpeg/ffprobe command, echoing stderr on failure.
+
+    The plain `subprocess.run(..., check=True, stderr=PIPE)` pattern used
+    throughout this file swallows ffmpeg's actual error message inside the
+    CalledProcessError — which is unhelpful both on the CLI and in the web
+    editor's export log, where it's the only diagnostic the user sees.
+    """
+    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stderr.decode(errors="replace"))
+        raise subprocess.CalledProcessError(proc.returncode, cmd)
+
+
 def resolve_grade_filter(grade_field: str | None) -> str:
     """The EDL's 'grade' field can be a preset name, a raw ffmpeg filter, or 'auto'.
 
@@ -208,7 +222,7 @@ def extract_segment(
         "-movflags", "+faststart",
         str(out_path),
     ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    run_ffmpeg(cmd)
 
 
 def extract_all_segments(
@@ -220,12 +234,13 @@ def extract_all_segments(
     """Extract every EDL range into edit_dir/clips_graded/seg_NN.mp4.
     Returns the ordered list of segment paths.
 
-    If the EDL `grade` is "auto", analyze each segment range with
-    `auto_grade_for_clip` and apply a per-segment subtle correction.
-    Otherwise, apply the same preset/raw filter to every segment.
+    Grade resolution per segment: a range may set its own `grade` field
+    (preset name, raw filter, or "auto") which overrides the EDL's global
+    `grade`. This lets the visual editor apply a different look per clip —
+    the CLI/chat flow keeps working unchanged since `grade` on a range is
+    optional and falls back to the global value.
     """
-    resolved = resolve_grade_filter(edl.get("grade"))
-    is_auto = resolved == "__AUTO__"
+    global_resolved = resolve_grade_filter(edl.get("grade"))
     clips_dir = edit_dir / (
         "clips_draft" if draft else ("clips_preview" if preview else "clips_graded")
     )
@@ -236,8 +251,6 @@ def extract_all_segments(
 
     seg_paths: list[Path] = []
     print(f"extracting {len(ranges)} segment(s) → {clips_dir.name}/")
-    if is_auto:
-        print("  (auto-grade per segment: analyzing each range)")
     for i, r in enumerate(ranges):
         src_name = r["source"]
         src_path = resolve_path(sources[src_name], edit_dir)
@@ -245,6 +258,10 @@ def extract_all_segments(
         end = float(r["end"])
         duration = end - start
         out_path = clips_dir / f"seg_{i:02d}_{src_name}.mp4"
+
+        range_grade = r.get("grade")
+        resolved = resolve_grade_filter(range_grade) if range_grade else global_resolved
+        is_auto = resolved == "__AUTO__"
 
         if is_auto:
             seg_filter, _stats = auto_grade_for_clip(src_path, start=start, duration=duration, verbose=False)
@@ -279,8 +296,93 @@ def concat_segments(segment_paths: list[Path], out_path: Path, edit_dir: Path) -
         str(out_path),
     ]
     print(f"concat → {out_path.name}")
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    run_ffmpeg(cmd)
     concat_list.unlink(missing_ok=True)
+
+
+def probe_duration(path: Path) -> float:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+        capture_output=True, text=True, check=True,
+    )
+    return float(out.stdout.strip())
+
+
+# xfade transition names ffmpeg supports natively (subset exposed to the UI).
+XFADE_TRANSITIONS = {
+    "fade", "wipeleft", "wiperight", "wipeup", "wipedown",
+    "slideleft", "slideright", "slideup", "slidedown",
+    "circleopen", "circleclose", "dissolve", "fadeblack", "fadewhite",
+}
+
+
+def has_real_transitions(transitions: list[dict] | None) -> bool:
+    if not transitions:
+        return False
+    return any((t or {}).get("type", "cut") not in (None, "cut") for t in transitions)
+
+
+def build_base_with_transitions(
+    segment_paths: list[Path],
+    transitions: list[dict] | None,
+    out_path: Path,
+) -> None:
+    """Concat segments with per-boundary transitions via ffmpeg xfade/acrossfade.
+
+    `transitions[i]` describes the boundary between segment i and i+1:
+    `{"type": "cut"}` (or missing) is a hard cut, everything else is an
+    xfade transition name (see XFADE_TRANSITIONS) with a `duration` in
+    seconds. Re-encodes (transitions can't be done with lossless concat),
+    so this path is only used when at least one real transition is present —
+    pure-cut EDLs keep using the fast lossless `concat_segments` path.
+    """
+    n = len(segment_paths)
+    durations = [probe_duration(p) for p in segment_paths]
+    inputs: list[str] = []
+    for p in segment_paths:
+        inputs += ["-i", str(p)]
+
+    vparts: list[str] = []
+    aparts: list[str] = []
+    cumulative = durations[0]
+    prev_v, prev_a = "0:v", "0:a"
+
+    for i in range(1, n):
+        t = (transitions[i - 1] if transitions and i - 1 < len(transitions) else None) or {}
+        ttype = t.get("type", "cut")
+        vlabel, alabel = f"v{i}", f"a{i}"
+
+        if ttype == "cut" or ttype is None:
+            vparts.append(f"[{prev_v}][{i}:v]concat=n=2:v=1:a=0[{vlabel}]")
+            aparts.append(f"[{prev_a}][{i}:a]concat=n=2:v=0:a=1[{alabel}]")
+            cumulative = cumulative + durations[i]
+        else:
+            xtype = ttype if ttype in XFADE_TRANSITIONS else "fade"
+            dur = float(t.get("duration", 0.4))
+            dur = max(0.05, min(dur, durations[i - 1] * 0.9, durations[i] * 0.9))
+            offset = max(0.0, cumulative - dur)
+            vparts.append(
+                f"[{prev_v}][{i}:v]xfade=transition={xtype}:duration={dur:.3f}:offset={offset:.3f}[{vlabel}]"
+            )
+            aparts.append(f"[{prev_a}][{i}:a]acrossfade=d={dur:.3f}[{alabel}]")
+            cumulative = cumulative + durations[i] - dur
+
+        prev_v, prev_a = vlabel, alabel
+
+    filter_complex = ";".join(vparts + aparts)
+    cmd = [
+        "ffmpeg", "-y",
+        *inputs,
+        "-filter_complex", filter_complex,
+        "-map", f"[{prev_v}]", "-map", f"[{prev_a}]",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+        "-movflags", "+faststart",
+        str(out_path),
+    ]
+    print(f"concat with transitions → {out_path.name}")
+    run_ffmpeg(cmd)
 
 
 # -------- Master SRT (Rule 5) ------------------------------------------------
@@ -454,7 +556,7 @@ def apply_loudnorm_two_pass(
             str(output_path),
         ]
         print(f"  loudnorm (1-pass preview) → {output_path.name}")
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        run_ffmpeg(cmd)
         return True
 
     # Full two-pass
@@ -486,8 +588,61 @@ def apply_loudnorm_two_pass(
         str(output_path),
     ]
     print(f"  loudnorm pass 2: normalizing → {output_path.name}")
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    run_ffmpeg(cmd)
     return True
+
+
+# -------- Text overlay cards (drawtext, composited like video overlays) -----
+
+TEXT_POSITIONS = {
+    "top": "x=(w-text_w)/2:y=h*0.08",
+    "center": "x=(w-text_w)/2:y=(h-text_h)/2",
+    "bottom": "x=(w-text_w)/2:y=h*0.85",
+}
+
+
+def escape_drawtext(text: str) -> str:
+    """Escape text for ffmpeg's drawtext filter syntax (not shell syntax —
+    args are passed as a list, so only ffmpeg's own filter escaping applies).
+    Straight apostrophes are swapped for a typographic quote to sidestep
+    drawtext's fiddly nested single-quote escaping.
+    """
+    text = text.replace("\\", "\\\\").replace(":", "\\:").replace("%", "\\%")
+    text = text.replace("'", "’")
+    return text
+
+
+def build_drawtext_filter(overlay: dict) -> str:
+    """Build a `drawtext=...` filter string for a text-type overlay entry.
+
+    Expected shape:
+        {"type": "text", "text": "...", "start_in_output": 0.0, "duration": 2.0,
+         "style": {"position": "bottom", "font_size": 54, "color": "white",
+                   "background": true, "font": "Helvetica"}}
+    """
+    style = overlay.get("style") or {}
+    text = escape_drawtext(str(overlay.get("text", "")))
+    t = float(overlay["start_in_output"])
+    dur = float(overlay["duration"])
+    end = t + dur
+
+    font_size = int(style.get("font_size", 54))
+    color = style.get("color", "white")
+    font = style.get("font", "Helvetica")
+    position = TEXT_POSITIONS.get(style.get("position", "bottom"), TEXT_POSITIONS["bottom"])
+
+    parts = [
+        f"text='{text}'",
+        f"font='{font}'",
+        f"fontsize={font_size}",
+        f"fontcolor={color}",
+        position,
+        f"enable='between(t,{t:.3f},{end:.3f})'",
+    ]
+    if style.get("background", True):
+        box_color = style.get("background_color", "black@0.5")
+        parts.append(f"box=1:boxcolor={box_color}:boxborderw=16")
+    return "drawtext=" + ":".join(parts)
 
 
 # -------- Final compositing (Rule 1 + Rule 4) -------------------------------
@@ -500,32 +655,46 @@ def build_final_composite(
     out_path: Path,
     edit_dir: Path,
 ) -> None:
-    """Final pass: base → overlays (PTS-shifted) → subtitles LAST → out.
+    """Final pass: base → video overlays (PTS-shifted) → text cards → subtitles LAST → out.
 
-    If there are no overlays and no subtitles, just copy base to out.
+    `overlays` entries default to video-file overlays (`{"file": ...}`) and
+    may also be text cards (`{"type": "text", "text": ..., "style": {...}}`),
+    rendered via drawtext instead of an extra video input. Text cards are
+    composited after video overlays but still before subtitles (Rule 1).
+
+    If there is nothing to composite, just copy base to out.
     """
-    has_overlays = bool(overlays)
-    has_subs = subtitles_path is not None and subtitles_path.exists()
+    video_overlays = [ov for ov in overlays if ov.get("type") != "text"]
+    text_overlays = [ov for ov in overlays if ov.get("type") == "text"]
+    has_overlays = bool(video_overlays)
+    has_text = bool(text_overlays)
+    # A zero-byte SRT (e.g. no transcript was available for any source) makes
+    # libass fail with "Unable to open" — treat it the same as "no subtitles".
+    has_subs = (
+        subtitles_path is not None
+        and subtitles_path.exists()
+        and subtitles_path.stat().st_size > 0
+    )
 
-    if not has_overlays and not has_subs:
+    if not has_overlays and not has_text and not has_subs:
         # Nothing to do — just rename/copy base to final name
         run(["ffmpeg", "-y", "-i", str(base_path), "-c", "copy", str(out_path)], quiet=True)
         return
 
     inputs: list[str] = ["-i", str(base_path)]
-    for ov in overlays:
+    for ov in video_overlays:
         ov_path = resolve_path(ov["file"], edit_dir)
         inputs += ["-i", str(ov_path)]
 
     filter_parts: list[str] = []
     # PTS-shift every overlay so its frame 0 lands at start_in_output
-    for idx, ov in enumerate(overlays, start=1):
+    for idx, ov in enumerate(video_overlays, start=1):
         t = float(ov["start_in_output"])
         filter_parts.append(f"[{idx}:v]setpts=PTS-STARTPTS+{t}/TB[a{idx}]")
 
-    # Chain overlays on top of base
+    # Chain video overlays on top of base
     current = "[0:v]"
-    for idx, ov in enumerate(overlays, start=1):
+    for idx, ov in enumerate(video_overlays, start=1):
         t = float(ov["start_in_output"])
         dur = float(ov["duration"])
         end = t + dur
@@ -533,6 +702,12 @@ def build_final_composite(
         filter_parts.append(
             f"{current}[a{idx}]overlay=enable='between(t,{t:.3f},{end:.3f})'{next_label}"
         )
+        current = next_label
+
+    # Text cards — drawtext, chained after video overlays
+    for idx, ov in enumerate(text_overlays, start=1):
+        next_label = f"[txt{idx}]"
+        filter_parts.append(f"{current}{build_drawtext_filter(ov)}{next_label}")
         current = next_label
 
     # Subtitles LAST — Rule 1
@@ -543,8 +718,8 @@ def build_final_composite(
         )
         out_label = "[outv]"
     else:
-        # Rename the last overlay output to [outv] for consistency
-        if has_overlays:
+        # Rename the last overlay/text output to [outv] for consistency
+        if has_overlays or has_text:
             filter_parts.append(f"{current}null[outv]")
             out_label = "[outv]"
         else:
@@ -566,7 +741,7 @@ def build_final_composite(
     ]
     print(f"compositing → {out_path.name}")
     print(f"  overlays: {len(overlays)}, subtitles: {'yes' if has_subs else 'no'}")
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    run_ffmpeg(cmd)
 
 
 # -------- Main ---------------------------------------------------------------
@@ -624,7 +799,11 @@ def main() -> None:
     else:
         base_name = "base.mp4"
     base_path = edit_dir / base_name
-    concat_segments(segment_paths, base_path, edit_dir)
+    transitions = edl.get("transitions")
+    if has_real_transitions(transitions):
+        build_base_with_transitions(segment_paths, transitions, base_path)
+    else:
+        concat_segments(segment_paths, base_path, edit_dir)
 
     # 3. Subtitles: build if requested, resolve final path
     subs_path: Path | None = None
