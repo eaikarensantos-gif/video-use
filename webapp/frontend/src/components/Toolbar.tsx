@@ -1,6 +1,6 @@
 import { useEditor } from "../store";
 
-export default function Toolbar({ onExport }: { onExport: () => void }) {
+export default function Toolbar({ onExport, onAiEdit }: { onExport: () => void; onAiEdit: () => void }) {
   const dirty = useEditor((s) => s.dirty);
   const saving = useEditor((s) => s.saving);
   const undo = useEditor((s) => s.undo);
@@ -38,6 +38,9 @@ export default function Toolbar({ onExport }: { onExport: () => void }) {
         />
       </label>
       <div className="status">{statusText}</div>
+      <button className="ghost" onClick={onAiEdit} title="Propose a cut with the real AI editor, review, then apply">
+        ✨ AI Edit
+      </button>
       <button className="primary" onClick={onExport}>
         Export
       </button>

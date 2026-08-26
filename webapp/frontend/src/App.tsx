@@ -6,6 +6,7 @@ import Player from "./components/Player";
 import Timeline from "./components/Timeline";
 import Inspector from "./components/Inspector";
 import ExportModal from "./components/ExportModal";
+import AiEditorModal from "./components/AiEditorModal";
 
 export default function App() {
   const load = useEditor((s) => s.load);
@@ -18,6 +19,7 @@ export default function App() {
   const selection = useEditor((s) => s.selection);
   const removeClip = useEditor((s) => s.removeClip);
   const [exportOpen, setExportOpen] = useState(false);
+  const [aiEditOpen, setAiEditOpen] = useState(false);
 
   useEffect(() => {
     load();
@@ -57,12 +59,13 @@ export default function App() {
 
   return (
     <div className="app">
-      <Toolbar onExport={() => setExportOpen(true)} />
+      <Toolbar onExport={() => setExportOpen(true)} onAiEdit={() => setAiEditOpen(true)} />
       <MediaBin />
       <Player />
       <Inspector />
       <Timeline />
       {exportOpen && <ExportModal onClose={() => setExportOpen(false)} />}
+      {aiEditOpen && <AiEditorModal onClose={() => setAiEditOpen(false)} />}
     </div>
   );
 }

@@ -4,7 +4,10 @@ A local, CapCut-style visual editor for video-use: a media bin, a real-time
 player, and a multi-track timeline (video / text / overlay / audio) with
 drag-to-trim, split, transitions, per-clip color grade, speed, Ken Burns
 zoom/pan, stickers, background music, file upload, and export — all in the
-browser.
+browser. It also exposes the same AI-driven automation the chat flow uses:
+one-click ElevenLabs transcription per clip, and a real Claude-powered
+auto-edit that proposes a cut list from a brief for you to review before
+anything touches the timeline.
 
 It is **not a replacement** for the chat-driven flow — it's a second way to
 drive the same project. Both read and write the same `<videos_dir>/edit/`
@@ -39,6 +42,30 @@ python webapp/backend/main.py --videos-dir /path/to/your/videos --port 8756
 
 Open `http://127.0.0.1:8756`. Drop more footage into the folder and refresh —
 it shows up in the media bin, same as the chat flow.
+
+### AI features (optional)
+
+Transcription and AI auto-edit both read their key from a `.env` file at the
+repo root (same convention as the chat flow — see `install.md`), or from the
+environment. Nothing in the UI works without the matching key; everything
+else in the editor works fine without either:
+
+```
+ELEVENLABS_API_KEY=...   # for one-click transcription
+ANTHROPIC_API_KEY=...    # for AI auto-edit
+```
+
+- **Transcription** — a **Transcribe** button per clip (or **Transcribe all**)
+  in the Media panel calls ElevenLabs Scribe and caches the result under
+  `edit/transcripts/`, same as `helpers/transcribe.py`. Needed for both
+  auto-subtitles on export and the AI auto-edit below.
+- **AI auto-edit** (toolbar, **✨ AI Edit**) — write a brief ("60s highlight,
+  upbeat, cut the small talk"), optionally a target duration, and it sends
+  your transcribed footage to Claude (`claude-opus-5`) the same way
+  `SKILL.md`'s editor sub-agent does. The model proposes a list of cuts
+  (source, in/out, a short label, and why); you review, uncheck anything you
+  don't want, and only then click **Apply** to write them to the video track.
+  Nothing is ever applied automatically.
 
 ## Frontend dev mode (hot reload)
 

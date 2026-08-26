@@ -33,7 +33,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import FileResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
-from jobs import get_job, start_render_job  # noqa: E402
+from jobs import Job, get_job, start_render_job, start_thread_job  # noqa: E402
 from mediainfo import generate_thumbnail, generate_waveform_peaks, probe_media  # noqa: E402
 from project import AUDIO_EXTS, VIDEO_EXTS, Project  # noqa: E402
 
@@ -71,6 +71,7 @@ def create_app(videos_dir: Path) -> FastAPI:
                 **info,
                 "thumbnail_url": f"/api/media/{name}/thumbnail.jpg",
                 "stream_url": f"/media/source/{p.name}",
+                "transcribed": (project.edit_dir / "transcripts" / f"{name}.json").exists(),
             })
         return result
 
@@ -127,6 +128,67 @@ def create_app(videos_dir: Path) -> FastAPI:
             raise HTTPException(500, f"waveform generation failed: {exc}") from exc
         cache.write_text(json.dumps(peaks))
         return peaks
+
+    # ---- Transcription (ElevenLabs Scribe — powers auto-captions + AI edit) --
+
+    @app.post("/api/media/{name}/transcribe")
+    def transcribe_media(name: str, language: str | None = Body(None, embed=True)):
+        src = project.find_source(name)
+        if not src:
+            raise HTTPException(404, f"unknown source '{name}'")
+
+        def work(job: Job) -> None:
+            from transcribe import load_api_key, transcribe_one
+
+            api_key = load_api_key()
+            job.log.append(f"transcribing {src.name}…")
+            path = transcribe_one(src, project.edit_dir, api_key, language=language, verbose=False)
+            job.log.append(f"done: {path.name}")
+            job.result = {"name": name, "path": str(path)}
+
+        job_id = start_thread_job(work)
+        return {"job_id": job_id}
+
+    @app.post("/api/media/transcribe-all")
+    def transcribe_all_media():
+        def work(job: Job) -> None:
+            from transcribe import load_api_key, transcribe_one
+
+            api_key = load_api_key()
+            sources = project.list_source_files()
+            done = 0
+            for src in sources:
+                job.log.append(f"transcribing {src.name}…")
+                try:
+                    transcribe_one(src, project.edit_dir, api_key, verbose=False)
+                    job.log.append(f"  done: {src.stem}")
+                    done += 1
+                except Exception as exc:  # noqa: BLE001 — keep going, report per-file
+                    job.log.append(f"  failed: {src.stem}: {exc}")
+            job.result = {"transcribed": done, "total": len(sources)}
+
+        job_id = start_thread_job(work)
+        return {"job_id": job_id}
+
+    # ---- AI auto-edit (real Anthropic API call, proposes cuts for review) --
+
+    @app.post("/api/ai/auto-edit")
+    def ai_auto_edit(brief: str = Body(..., embed=True), target_duration: float | None = Body(None, embed=True)):
+        def work(job: Job) -> None:
+            from ai_editor import run_auto_edit
+
+            ranges = run_auto_edit(project.edit_dir, brief, target_duration, log=job.log.append)
+            job.result = {"ranges": ranges}
+
+        job_id = start_thread_job(work)
+        return {"job_id": job_id}
+
+    @app.get("/api/jobs/{job_id}")
+    def job_status(job_id: str):
+        job = get_job(job_id)
+        if not job:
+            raise HTTPException(404, "job not found")
+        return {"status": job.status, "log": job.log[-300:], "error": job.error, "result": job.result}
 
     # ---- Music/ambience (background audio track) -------------------------
 

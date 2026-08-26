@@ -1,5 +1,65 @@
 import { useRef, useState } from "react";
+import { api } from "../api";
 import { useEditor } from "../store";
+
+/** Polls a transcription job until it's done/errored, then refreshes the
+ * media list so `transcribed` badges update. Returns a per-name busy set
+ * and any per-name error, plus a "busy all" flag for the bulk action. */
+function useTranscribeJobs() {
+  const refreshLibraries = useEditor((s) => s.refreshLibraries);
+  const [busy, setBusy] = useState<Set<string>>(new Set());
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [busyAll, setBusyAll] = useState(false);
+  const [allError, setAllError] = useState<string | null>(null);
+
+  function poll(jobId: string, onDone: () => void, onError: (msg: string) => void) {
+    const interval = setInterval(async () => {
+      const s = await api.jobStatus(jobId).catch(() => null);
+      if (!s) return;
+      if (s.status === "done") {
+        clearInterval(interval);
+        onDone();
+      } else if (s.status === "error") {
+        clearInterval(interval);
+        onError(s.error || "transcription failed");
+      }
+    }, 1000);
+  }
+
+  async function transcribeOne(name: string) {
+    setErrors((e) => { const n = { ...e }; delete n[name]; return n; });
+    setBusy((b) => new Set(b).add(name));
+    try {
+      const { job_id } = await api.transcribeMedia(name);
+      poll(
+        job_id,
+        () => { setBusy((b) => { const n = new Set(b); n.delete(name); return n; }); refreshLibraries(); },
+        (msg) => { setBusy((b) => { const n = new Set(b); n.delete(name); return n; }); setErrors((e) => ({ ...e, [name]: msg })); }
+      );
+    } catch (err: any) {
+      setBusy((b) => { const n = new Set(b); n.delete(name); return n; });
+      setErrors((e) => ({ ...e, [name]: String(err?.message || err) }));
+    }
+  }
+
+  async function transcribeAll() {
+    setBusyAll(true);
+    setAllError(null);
+    try {
+      const { job_id } = await api.transcribeAll();
+      poll(
+        job_id,
+        () => { setBusyAll(false); refreshLibraries(); },
+        (msg) => { setBusyAll(false); setAllError(msg); refreshLibraries(); }
+      );
+    } catch (err: any) {
+      setBusyAll(false);
+      setAllError(String(err?.message || err));
+    }
+  }
+
+  return { busy, errors, busyAll, allError, transcribeOne, transcribeAll };
+}
 
 function fmtDur(s?: number): string {
   if (!s && s !== 0) return "";
@@ -21,6 +81,7 @@ export default function MediaBin() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const { busy, errors, busyAll, allError, transcribeOne, transcribeAll } = useTranscribeJobs();
 
   function handleFiles(fileList: FileList | null) {
     if (!fileList || !fileList.length) return;
@@ -46,6 +107,16 @@ export default function MediaBin() {
     >
       <div className="media-bin-header">
         <h3>Media</h3>
+        {media.length > 0 && (
+          <button
+            className="ghost"
+            onClick={transcribeAll}
+            disabled={busyAll}
+            title="Transcribe every source with ElevenLabs (needed for AI auto-edit and auto-subtitles)"
+          >
+            {busyAll ? "Transcribing…" : "Transcribe all"}
+          </button>
+        )}
         <button className="ghost" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
           {uploading ? "Uploading…" : "+ Import"}
         </button>
@@ -62,6 +133,7 @@ export default function MediaBin() {
         />
       </div>
 
+      {allError && <div className="dur" style={{ color: "var(--danger)", marginBottom: 8 }}>{allError}</div>}
       {dragOver && <div className="dropzone-hint">Drop files to import</div>}
 
       {media.length === 0 && (
@@ -86,7 +158,21 @@ export default function MediaBin() {
           <div className="meta">
             <div className="name">{m.name}</div>
             <div className="dur">{fmtDur(m.duration)}{m.width ? ` · ${m.width}×${m.height}` : ""}</div>
+            {errors[m.name] && <div className="dur" style={{ color: "var(--danger)" }}>{errors[m.name]}</div>}
           </div>
+          {m.transcribed ? (
+            <span className="badge-ok" title="Transcript available">✓ transcribed</span>
+          ) : (
+            <button
+              className="ghost"
+              style={{ fontSize: 10, padding: "3px 6px" }}
+              onClick={(e) => { e.stopPropagation(); transcribeOne(m.name); }}
+              disabled={busy.has(m.name)}
+              title="Transcribe with ElevenLabs Scribe"
+            >
+              {busy.has(m.name) ? "…" : "Transcribe"}
+            </button>
+          )}
         </div>
       ))}
 

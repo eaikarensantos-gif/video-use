@@ -1,4 +1,4 @@
-import type { AudioItem, ExportStatus, GradePreset, MediaItem, Sticker, Timeline } from "./types";
+import type { AudioItem, ExportStatus, GradePreset, JobStatus, MediaItem, Sticker, Timeline } from "./types";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -37,4 +37,19 @@ export const api = {
       body: JSON.stringify({ mode, build_subtitles: buildSubtitles }),
     }).then((r) => json<{ job_id: string }>(r)),
   exportStatus: (jobId: string) => fetch(`/api/export/${jobId}`).then((r) => json<ExportStatus>(r)),
+  transcribeMedia: (name: string, language?: string) =>
+    fetch(`/api/media/${encodeURIComponent(name)}/transcribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language: language || null }),
+    }).then((r) => json<{ job_id: string }>(r)),
+  transcribeAll: () =>
+    fetch("/api/media/transcribe-all", { method: "POST" }).then((r) => json<{ job_id: string }>(r)),
+  autoEdit: (brief: string, targetDuration?: number) =>
+    fetch("/api/ai/auto-edit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brief, target_duration: targetDuration ?? null }),
+    }).then((r) => json<{ job_id: string }>(r)),
+  jobStatus: <T = any>(jobId: string) => fetch(`/api/jobs/${jobId}`).then((r) => json<JobStatus<T>>(r)),
 };

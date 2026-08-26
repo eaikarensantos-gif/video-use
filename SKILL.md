@@ -72,9 +72,11 @@ Helpers (`helpers/transcribe.py`, `helpers/render.py`, etc.) live alongside this
 ## Visual editor (optional, coexists with this chat flow)
 
 `webapp/` ships a local CapCut-style visual editor (media bin, player,
-multi-track timeline, per-clip grade/transitions/text, export) that reads and
-writes the same `edl.json` this skill does, via a richer `timeline.json`
-bridged on load/save (`webapp/backend/bridge.py`). If a session's
+multi-track timeline, per-clip grade/transitions/text, export, plus one-click
+ElevenLabs transcription and a Claude-powered auto-edit that proposes cuts
+for review before applying — the same jobs this chat flow does, exposed as
+UI) that reads and writes the same `edl.json` this skill does, via a richer
+`timeline.json` bridged on load/save (`webapp/backend/bridge.py`). If a session's
 `<videos_dir>/edit/` already has a `timeline.json`, treat it as just another
 view of `edl.json` — the ranges/grade/transitions/overlays it was bridged from
 are authoritative for the next render either way. Never edit `timeline.json`

@@ -93,6 +93,7 @@ export interface MediaItem {
   has_audio?: boolean;
   thumbnail_url: string;
   stream_url: string;
+  transcribed: boolean;
 }
 
 export interface AudioItem {
@@ -113,6 +114,21 @@ export interface ExportStatus {
   log: string[];
   error?: string | null;
   output_url?: string;
+}
+
+export interface AutoEditRange {
+  source: string;
+  start: number;
+  end: number;
+  beat: string;
+  reason: string;
+}
+
+export interface JobStatus<T = any> {
+  status: "queued" | "running" | "done" | "error";
+  log: string[];
+  error?: string | null;
+  result: T | null;
 }
 
 export function isVideoClip(c: any, track: Track): c is VideoClip {

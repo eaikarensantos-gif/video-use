@@ -14,7 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 animations = ["manim"]
-webapp = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9"]
+webapp = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9", "anthropic>=1.0"]
 
 [build-system]
 requires = ["setuptools>=61.0"]

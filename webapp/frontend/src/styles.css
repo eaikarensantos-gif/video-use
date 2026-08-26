@@ -105,10 +105,11 @@ select, input[type="text"], input[type="number"] {
   width: 64px; height: 36px; border-radius: 4px; background: var(--bg-3);
   display: flex; align-items: center; justify-content: center; font-size: 16px; color: var(--accent); flex-shrink: 0;
 }
-.media-item .meta { min-width: 0; }
+.media-item .meta { min-width: 0; flex: 1; }
 .media-item .name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-item .dur { font-size: 11px; color: var(--text-2); }
 .media-empty { color: var(--text-2); font-size: 12px; line-height: 1.5; padding: 8px 2px; }
+.badge-ok { font-size: 10px; color: var(--accent); white-space: nowrap; flex-shrink: 0; }
 
 .sticker-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .sticker-thumb {
@@ -132,7 +133,7 @@ select, input[type="text"], input[type="number"] {
 .inspector h3 { margin: 0 0 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-2); }
 .field { margin-bottom: 12px; }
 .field label { display: block; font-size: 11px; color: var(--text-1); margin-bottom: 4px; }
-.field select, .field input[type="text"], .field input[type="number"] { width: 100%; }
+.field select, .field input[type="text"], .field input[type="number"], .field textarea { width: 100%; resize: vertical; font-family: inherit; }
 .field-row { display: flex; gap: 8px; }
 .field-row .field { flex: 1; }
 .empty-inspector { color: var(--text-2); font-size: 12px; line-height: 1.6; }
@@ -191,6 +192,14 @@ select, input[type="text"], input[type="number"] {
   position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 10;
 }
 .modal { background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 20px; width: 480px; max-width: 90vw; }
+.modal.wide { width: 640px; }
+.cut-list { max-height: 320px; overflow-y: auto; margin: 4px 0 12px; border: 1px solid var(--border); border-radius: 6px; }
+.cut-row { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.cut-row:last-child { border-bottom: none; }
+.cut-row .cut-meta { color: var(--text-2); font-size: 11px; }
+.cut-row .cut-beat { font-weight: 600; }
+.cut-row .cut-reason { color: var(--text-1); }
+.cut-row-body { min-width: 0; flex: 1; }
 .modal h2 { margin: 0 0 12px; font-size: 15px; }
 .modal .log {
   background: var(--bg-0); border-radius: 6px; padding: 8px; height: 160px; overflow-y: auto;
