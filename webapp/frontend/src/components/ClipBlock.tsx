@@ -1,9 +1,9 @@
 import { useRef } from "react";
-import type { OverlayClip, TextClip, Track, VideoClip } from "../types";
+import type { AudioClip, OverlayClip, TextClip, Track, VideoClip } from "../types";
 
 interface Props {
   track: Track;
-  clip: VideoClip | TextClip | OverlayClip;
+  clip: VideoClip | TextClip | OverlayClip | AudioClip;
   left: number;
   width: number;
   selected: boolean;

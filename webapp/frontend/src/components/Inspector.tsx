@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useEditor } from "../store";
 import { api } from "../api";
-import type { GradePreset, OverlayClip, TextClip, VideoClip } from "../types";
+import type { AudioClip, GradePreset, OverlayClip, TextClip, VideoClip } from "../types";
 
 export default function Inspector() {
   const timeline = useEditor((s) => s.timeline);
@@ -9,6 +9,7 @@ export default function Inspector() {
   const updateVideoClip = useEditor((s) => s.updateVideoClip);
   const updateTextClip = useEditor((s) => s.updateTextClip);
   const updateOverlayClip = useEditor((s) => s.updateOverlayClip);
+  const updateAudioClip = useEditor((s) => s.updateAudioClip);
   const removeClip = useEditor((s) => s.removeClip);
 
   const [grades, setGrades] = useState<GradePreset[]>([]);
@@ -95,6 +96,43 @@ export default function Inspector() {
           </div>
         )}
         <div className="field">
+          <label>Speed ({(c.speed ?? 1).toFixed(2)}x)</label>
+          <select value={c.speed ?? 1} onChange={(e) => updateVideoClip(c.id, { speed: Number(e.target.value) })}>
+            <option value={0.25}>0.25x</option>
+            <option value={0.5}>0.5x</option>
+            <option value={0.75}>0.75x</option>
+            <option value={1}>1x (normal)</option>
+            <option value={1.25}>1.25x</option>
+            <option value={1.5}>1.5x</option>
+            <option value={2}>2x</option>
+            <option value={3}>3x</option>
+            <option value={4}>4x</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>Zoom / pan (Ken Burns)</label>
+          <select
+            value={c.zoom?.type ?? "none"}
+            onChange={(e) => {
+              const type = e.target.value;
+              updateVideoClip(c.id, { zoom: type === "none" ? null : { type: type as "in" | "out", amount: c.zoom?.amount ?? 0.15 } });
+            }}
+          >
+            <option value="none">None</option>
+            <option value="in">Zoom in</option>
+            <option value="out">Zoom out</option>
+          </select>
+        </div>
+        {c.zoom && (
+          <div className="field">
+            <label>Zoom amount ({Math.round((c.zoom.amount ?? 0.15) * 100)}%)</label>
+            <input
+              type="range" min={0.05} max={0.6} step={0.01} value={c.zoom.amount ?? 0.15}
+              onChange={(e) => updateVideoClip(c.id, { zoom: { type: c.zoom!.type, amount: Number(e.target.value) } })}
+            />
+          </div>
+        )}
+        <div className="field">
           <label>Note / beat</label>
           <input type="text" value={c.note ?? ""} onChange={(e) => updateVideoClip(c.id, { note: e.target.value })} />
         </div>
@@ -122,16 +160,29 @@ export default function Inspector() {
             <input type="number" step={0.05} value={c.duration.toFixed(2)} onChange={(e) => updateTextClip(c.id, { duration: Number(e.target.value) })} />
           </div>
         </div>
-        <div className="field">
-          <label>Position</label>
-          <select
-            value={c.style?.position ?? "bottom"}
-            onChange={(e) => updateTextClip(c.id, { style: { position: e.target.value as any } })}
-          >
-            <option value="top">Top</option>
-            <option value="center">Center</option>
-            <option value="bottom">Bottom</option>
-          </select>
+        <div className="field-row">
+          <div className="field">
+            <label>Position</label>
+            <select
+              value={c.style?.position ?? "bottom"}
+              onChange={(e) => updateTextClip(c.id, { style: { position: e.target.value as any } })}
+            >
+              <option value="top">Top</option>
+              <option value="center">Center</option>
+              <option value="bottom">Bottom</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Animation</label>
+            <select
+              value={c.style?.animation ?? "none"}
+              onChange={(e) => updateTextClip(c.id, { style: { animation: e.target.value as any } })}
+            >
+              <option value="none">None</option>
+              <option value="fade">Fade in/out</option>
+              <option value="slide_up">Slide up</option>
+            </select>
+          </div>
         </div>
         <div className="field-row">
           <div className="field">
@@ -162,10 +213,54 @@ export default function Inspector() {
     );
   }
 
+  if (track.type === "audio") {
+    const c = clip as AudioClip;
+    return (
+      <div className="inspector">
+        <h3>Audio clip</h3>
+        <div className="field">
+          <label>File</label>
+          <input type="text" value={c.file.split("/").pop()} readOnly />
+        </div>
+        <div className="field-row">
+          <div className="field">
+            <label>Start (s)</label>
+            <input type="number" step={0.05} value={c.start.toFixed(2)} onChange={(e) => updateAudioClip(c.id, { start: Number(e.target.value) })} />
+          </div>
+          <div className="field">
+            <label>Duration (s)</label>
+            <input type="number" step={0.05} value={c.duration.toFixed(2)} onChange={(e) => updateAudioClip(c.id, { duration: Number(e.target.value) })} />
+          </div>
+        </div>
+        <div className="field">
+          <label>Volume ({Math.round((c.volume ?? 1) * 100)}%)</label>
+          <input type="range" min={0} max={2} step={0.01} value={c.volume ?? 1} onChange={(e) => updateAudioClip(c.id, { volume: Number(e.target.value) })} />
+        </div>
+        <div className="field-row">
+          <div className="field">
+            <label>Fade in (s)</label>
+            <input type="number" step={0.05} min={0} value={(c.fadeIn ?? 0).toFixed(2)} onChange={(e) => updateAudioClip(c.id, { fadeIn: Number(e.target.value) })} />
+          </div>
+          <div className="field">
+            <label>Fade out (s)</label>
+            <input type="number" step={0.05} min={0} value={(c.fadeOut ?? 0).toFixed(2)} onChange={(e) => updateAudioClip(c.id, { fadeOut: Number(e.target.value) })} />
+          </div>
+        </div>
+        <button onClick={() => removeClip(track.id, c.id)}>Delete audio clip</button>
+      </div>
+    );
+  }
+
   const c = clip as OverlayClip;
+  const isSticker = c.kind === "sticker";
   return (
     <div className="inspector">
-      <h3>Overlay</h3>
+      <h3>{isSticker ? "Sticker" : "Overlay"}</h3>
+      {isSticker && (
+        <div className="field">
+          <img src={c.file} alt="" style={{ width: 64, height: 64, objectFit: "contain", background: "var(--bg-2)", borderRadius: 6, padding: 6 }} />
+        </div>
+      )}
       <div className="field">
         <label>File</label>
         <input type="text" value={c.file} readOnly />
@@ -180,7 +275,25 @@ export default function Inspector() {
           <input type="number" step={0.05} value={c.duration.toFixed(2)} onChange={(e) => updateOverlayClip(c.id, { duration: Number(e.target.value) })} />
         </div>
       </div>
-      <button onClick={() => removeClip(track.id, c.id)}>Delete overlay</button>
+      {isSticker && (
+        <>
+          <div className="field-row">
+            <div className="field">
+              <label>X position ({Math.round((c.x ?? 0.5) * 100)}%)</label>
+              <input type="range" min={0} max={1} step={0.01} value={c.x ?? 0.5} onChange={(e) => updateOverlayClip(c.id, { x: Number(e.target.value) })} />
+            </div>
+            <div className="field">
+              <label>Y position ({Math.round((c.y ?? 0.5) * 100)}%)</label>
+              <input type="range" min={0} max={1} step={0.01} value={c.y ?? 0.5} onChange={(e) => updateOverlayClip(c.id, { y: Number(e.target.value) })} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Size ({Math.round((c.scale ?? 0.3) * 100)}% of frame width)</label>
+            <input type="range" min={0.05} max={1} step={0.01} value={c.scale ?? 0.3} onChange={(e) => updateOverlayClip(c.id, { scale: Number(e.target.value) })} />
+          </div>
+        </>
+      )}
+      <button onClick={() => removeClip(track.id, c.id)}>Delete {isSticker ? "sticker" : "overlay"}</button>
     </div>
   );
 }

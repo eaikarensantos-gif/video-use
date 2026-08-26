@@ -8,6 +8,8 @@ export interface VideoClip {
   grade?: string;
   note?: string;
   transitionOut?: Transition;
+  speed?: number;
+  zoom?: { type: "in" | "out"; amount?: number } | null;
 }
 
 export interface TextClip {
@@ -22,6 +24,7 @@ export interface TextClip {
     background?: boolean;
     background_color?: string;
     font?: string;
+    animation?: "none" | "fade" | "slide_up";
   };
 }
 
@@ -30,15 +33,37 @@ export interface OverlayClip {
   start: number;
   duration: number;
   file: string;
+  kind?: "video" | "sticker";
+  /** sticker only — center position as a fraction of frame size (0-1) */
+  x?: number;
+  y?: number;
+  /** sticker only — width as a fraction of frame width (0-1) */
+  scale?: number;
 }
 
-export type TrackType = "video" | "text" | "overlay";
+export interface Sticker {
+  name: string;
+  url: string;
+}
+
+export interface AudioClip {
+  id: string;
+  file: string;
+  start: number;
+  duration: number;
+  trimIn?: number;
+  volume?: number;
+  fadeIn?: number;
+  fadeOut?: number;
+}
+
+export type TrackType = "video" | "text" | "overlay" | "audio";
 
 export interface Track {
   id: string;
   type: TrackType;
   name: string;
-  clips: (VideoClip | TextClip | OverlayClip)[];
+  clips: (VideoClip | TextClip | OverlayClip | AudioClip)[];
 }
 
 export interface SourceInfo {
@@ -67,6 +92,13 @@ export interface MediaItem {
   fps?: number;
   has_audio?: boolean;
   thumbnail_url: string;
+  stream_url: string;
+}
+
+export interface AudioItem {
+  name: string;
+  filename: string;
+  duration?: number;
   stream_url: string;
 }
 

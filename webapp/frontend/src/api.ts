@@ -1,4 +1,4 @@
-import type { ExportStatus, GradePreset, MediaItem, Timeline } from "./types";
+import type { AudioItem, ExportStatus, GradePreset, MediaItem, Sticker, Timeline } from "./types";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -20,6 +20,16 @@ export const api = {
     }).then((r) => json<Timeline>(r)),
   gradePresets: () => fetch("/api/presets/grades").then((r) => json<GradePreset[]>(r)),
   transitionPresets: () => fetch("/api/presets/transitions").then((r) => json<string[]>(r)),
+  stickers: () => fetch("/api/stickers").then((r) => json<Sticker[]>(r)),
+  audioFiles: () => fetch("/api/audio").then((r) => json<AudioItem[]>(r)),
+  audioWaveform: (name: string) => fetch(`/api/audio/${encodeURIComponent(name)}/waveform`).then((r) => json<number[]>(r)),
+  uploadMedia: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return fetch("/api/media/upload", { method: "POST", body }).then((r) =>
+      json<{ name: string; filename: string; kind: "video" | "audio" }>(r)
+    );
+  },
   startExport: (mode: "preview" | "final", buildSubtitles: boolean) =>
     fetch("/api/export", {
       method: "POST",

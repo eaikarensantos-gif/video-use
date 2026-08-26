@@ -3,7 +3,7 @@ import { useEditor } from "../store";
 import { computeVideoLayout } from "../layout";
 import { api } from "../api";
 import ClipBlock from "./ClipBlock";
-import type { OverlayClip, TextClip, Track, VideoClip } from "../types";
+import type { AudioClip, OverlayClip, TextClip, Track, VideoClip } from "../types";
 
 function pickStep(zoom: number): number {
   const target = 80; // desired px between ticks
@@ -40,8 +40,13 @@ export default function Timeline() {
   const updateTextClip = useEditor((s) => s.updateTextClip);
   const updateOverlayClip = useEditor((s) => s.updateOverlayClip);
   const addTextClip = useEditor((s) => s.addTextClip);
+  const addStickerClip = useEditor((s) => s.addStickerClip);
+  const addAudioClip = useEditor((s) => s.addAudioClip);
+  const updateAudioClip = useEditor((s) => s.updateAudioClip);
+  const audioFiles = useEditor((s) => s.audioFiles);
 
   const [waveforms, setWaveforms] = useState<Record<string, number[]>>({});
+  const [audioWaveforms, setAudioWaveforms] = useState<Record<string, number[]>>({});
   const [dragOffset, setDragOffset] = useState<{ clipId: string; deltaPx: number } | null>(null);
   const [resizeOffset, setResizeOffset] = useState<{ clipId: string; edge: "left" | "right"; deltaPx: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -50,6 +55,8 @@ export default function Timeline() {
   const videoTrack = tracks.find((t) => t.type === "video");
   const videoClips = (videoTrack?.clips ?? []) as VideoClip[];
   const videoLayout = useMemo(() => computeVideoLayout(videoClips), [videoClips]);
+  const audioTrack = tracks.find((t) => t.type === "audio");
+  const audioClips = (audioTrack?.clips ?? []) as AudioClip[];
 
   useEffect(() => {
     const sources = Array.from(new Set(videoClips.map((c) => c.source)));
@@ -60,6 +67,16 @@ export default function Timeline() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoClips.map((c) => c.source).join(",")]);
+
+  useEffect(() => {
+    const names = Array.from(new Set(audioClips.map((c) => audioFiles.find((a) => a.stream_url === c.file)?.name).filter((n): n is string => !!n)));
+    names.forEach((name) => {
+      if (audioWaveforms[name] !== undefined) return;
+      setAudioWaveforms((w) => ({ ...w, [name]: [] }));
+      api.audioWaveform(name).then((peaks) => setAudioWaveforms((w) => ({ ...w, [name]: peaks }))).catch(() => {});
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioClips.map((c) => c.file).join(",")]);
 
   const laneWidth = Math.max(600, (totalDuration + 5) * zoom);
   const step = pickStep(zoom);
@@ -80,35 +97,62 @@ export default function Timeline() {
     return peaks.slice(Math.max(0, startIdx), Math.min(peaks.length, endIdx));
   }
 
+  function peaksForAudioClip(clip: AudioClip): number[] | undefined {
+    const item = audioFiles.find((a) => a.stream_url === clip.file);
+    if (!item) return undefined;
+    const peaks = audioWaveforms[item.name];
+    if (!peaks || !peaks.length || !item.duration) return undefined;
+    const from = clip.trimIn ?? 0;
+    const to = from + clip.duration;
+    const startIdx = Math.floor((from / item.duration) * peaks.length);
+    const endIdx = Math.ceil((to / item.duration) * peaks.length);
+    return peaks.slice(Math.max(0, startIdx), Math.min(peaks.length, endIdx));
+  }
+
   function renderTrack(track: Track) {
     const isVideo = track.type === "video";
+    const isAudio = track.type === "audio";
     const layouts: Layout[] = isVideo
       ? videoLayout
-      : (track.clips as (TextClip | OverlayClip)[]).map((c) => ({ start: c.start, duration: c.duration }));
+      : (track.clips as (TextClip | OverlayClip | AudioClip)[]).map((c) => ({ start: c.start, duration: c.duration }));
 
     return (
       <div className="track-row" key={track.id}>
         <div className="track-label">{track.name}</div>
         <div
-          className={`track-lane ${dragOver && isVideo ? "dragover" : ""}`}
+          className={`track-lane ${dragOver && (isVideo || track.type === "overlay" || isAudio) ? "dragover" : ""}`}
           style={{ width: laneWidth }}
           onClick={(e) => {
             setPlayhead(timeFromClientX(e.clientX, e.currentTarget));
             select(null);
           }}
           onDragOver={(e) => {
-            if (!isVideo) return;
+            if (!isVideo && track.type !== "overlay" && !isAudio) return;
             e.preventDefault();
             setDragOver(true);
           }}
           onDragLeave={() => setDragOver(false)}
           onDrop={(e) => {
-            if (!isVideo) return;
             e.preventDefault();
             setDragOver(false);
-            const name = e.dataTransfer.getData("application/x-video-use-source");
-            const src = media.find((m) => m.name === name);
-            if (src) appendVideoClip(name, 0, src.duration ?? 3);
+            if (isVideo) {
+              const name = e.dataTransfer.getData("application/x-video-use-source");
+              const src = media.find((m) => m.name === name);
+              if (src) appendVideoClip(name, 0, src.duration ?? 3);
+            } else if (isAudio) {
+              const audioUrl = e.dataTransfer.getData("application/x-video-use-audio");
+              if (audioUrl) {
+                const dropTime = timeFromClientX(e.clientX, e.currentTarget);
+                const item = audioFiles.find((a) => a.stream_url === audioUrl);
+                addAudioClip(audioUrl, dropTime, item?.duration ?? 5);
+              }
+            } else if (track.type === "overlay") {
+              const stickerUrl = e.dataTransfer.getData("application/x-video-use-sticker");
+              if (stickerUrl) {
+                const dropTime = timeFromClientX(e.clientX, e.currentTarget);
+                addStickerClip(stickerUrl, dropTime, 2);
+              }
+            }
           }}
         >
           {track.clips.map((clip, i) => {
@@ -126,7 +170,11 @@ export default function Timeline() {
                 width += resizeOffset.deltaPx;
               }
             }
-            const wf = isVideo ? peaksForRange((clip as VideoClip).source, (clip as VideoClip).in, (clip as VideoClip).out) : undefined;
+            const wf = isVideo
+              ? peaksForRange((clip as VideoClip).source, (clip as VideoClip).in, (clip as VideoClip).out)
+              : isAudio
+              ? peaksForAudioClip(clip as AudioClip)
+              : undefined;
 
             return (
               <ClipBlock
@@ -161,6 +209,7 @@ export default function Timeline() {
                   } else {
                     const newStart = Math.max(0, base.start + deltaTime);
                     if (track.type === "text") updateTextClip(clip.id, { start: newStart });
+                    else if (isAudio) updateAudioClip(clip.id, { start: newStart });
                     else updateOverlayClip(clip.id, { start: newStart });
                   }
                 }}
@@ -182,6 +231,20 @@ export default function Timeline() {
                     } else {
                       const newOut = Math.max(c.in + 0.1, Math.min(maxOut, c.out + dt));
                       updateVideoClip(clip.id, { out: newOut });
+                    }
+                  } else if (isAudio) {
+                    const ac = clip as AudioClip;
+                    if (edge === "left") {
+                      const newStart = Math.max(0, ac.start + dt);
+                      const startDelta = newStart - ac.start;
+                      const newTrimIn = Math.max(0, (ac.trimIn ?? 0) + startDelta);
+                      const newDuration = Math.max(0.2, ac.duration - startDelta);
+                      updateAudioClip(clip.id, { start: newStart, trimIn: newTrimIn, duration: newDuration });
+                    } else {
+                      const item = audioFiles.find((a) => a.stream_url === ac.file);
+                      const maxDur = item?.duration ? item.duration - (ac.trimIn ?? 0) : ac.duration + dt + 999;
+                      const newDuration = Math.max(0.2, Math.min(maxDur, ac.duration + dt));
+                      updateAudioClip(clip.id, { duration: newDuration });
                     }
                   } else {
                     const c = clip as TextClip | OverlayClip;

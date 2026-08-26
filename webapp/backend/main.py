@@ -20,6 +20,7 @@ BACKEND_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BACKEND_DIR.parent.parent
 HELPERS_DIR = REPO_ROOT / "helpers"
 FRONTEND_DIST = BACKEND_DIR.parent / "frontend" / "dist"
+STICKERS_DIR = REPO_ROOT / "static" / "stickers"
 
 # helpers/ uses same-directory imports (`from grade import ...`); make both
 # it and this backend dir importable.
@@ -27,14 +28,14 @@ for p in (str(HELPERS_DIR), str(BACKEND_DIR)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from fastapi import Body, FastAPI, HTTPException  # noqa: E402
+from fastapi import Body, FastAPI, File, HTTPException, UploadFile  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import FileResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from jobs import get_job, start_render_job  # noqa: E402
 from mediainfo import generate_thumbnail, generate_waveform_peaks, probe_media  # noqa: E402
-from project import Project  # noqa: E402
+from project import AUDIO_EXTS, VIDEO_EXTS, Project  # noqa: E402
 
 
 def create_app(videos_dir: Path) -> FastAPI:
@@ -73,6 +74,31 @@ def create_app(videos_dir: Path) -> FastAPI:
             })
         return result
 
+    @app.post("/api/media/upload")
+    async def upload_media(file: UploadFile = File(...)):
+        # .name strips any directory components the browser might send —
+        # never trust a client-supplied path.
+        safe_name = Path(file.filename or "upload").name
+        ext = Path(safe_name).suffix.lower()
+        if ext not in VIDEO_EXTS and ext not in AUDIO_EXTS:
+            allowed = ", ".join(sorted(VIDEO_EXTS | AUDIO_EXTS))
+            raise HTTPException(400, f"unsupported file type '{ext}'. Allowed: {allowed}")
+
+        dest = project.videos_dir / safe_name
+        if dest.exists():
+            stem, suffix = dest.stem, dest.suffix
+            i = 1
+            while dest.exists():
+                dest = project.videos_dir / f"{stem}_{i}{suffix}"
+                i += 1
+
+        project.videos_dir.mkdir(parents=True, exist_ok=True)
+        with dest.open("wb") as out:
+            while chunk := await file.read(1024 * 1024):
+                out.write(chunk)
+
+        return {"name": dest.stem, "filename": dest.name, "kind": "video" if ext in VIDEO_EXTS else "audio"}
+
     @app.get("/api/media/{name}/thumbnail.jpg")
     def media_thumbnail(name: str, t: float = 0.0):
         src = project.find_source(name)
@@ -92,6 +118,41 @@ def create_app(videos_dir: Path) -> FastAPI:
         if not src:
             raise HTTPException(404, f"unknown source '{name}'")
         cache = project.edit_dir / "waveforms" / f"{name}.json"
+        if cache.exists():
+            return json.loads(cache.read_text())
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            peaks = generate_waveform_peaks(src)
+        except Exception as exc:
+            raise HTTPException(500, f"waveform generation failed: {exc}") from exc
+        cache.write_text(json.dumps(peaks))
+        return peaks
+
+    # ---- Music/ambience (background audio track) -------------------------
+
+    @app.get("/api/audio")
+    def list_audio():
+        result = []
+        for p in project.list_audio_files():
+            name = p.stem
+            try:
+                info = probe_media(p)
+            except Exception:
+                info = {}
+            result.append({
+                "name": name,
+                "filename": p.name,
+                **info,
+                "stream_url": f"/media/source/{p.name}",
+            })
+        return result
+
+    @app.get("/api/audio/{name}/waveform")
+    def audio_waveform(name: str):
+        src = project.find_audio(name)
+        if not src:
+            raise HTTPException(404, f"unknown audio file '{name}'")
+        cache = project.edit_dir / "waveforms" / f"audio_{name}.json"
         if cache.exists():
             return json.loads(cache.read_text())
         cache.parent.mkdir(parents=True, exist_ok=True)
@@ -137,6 +198,15 @@ def create_app(videos_dir: Path) -> FastAPI:
 
         return ["cut", *sorted(XFADE_TRANSITIONS)]
 
+    @app.get("/api/stickers")
+    def list_stickers():
+        if not STICKERS_DIR.exists():
+            return []
+        return [
+            {"name": p.stem, "url": f"/static/stickers/{p.name}"}
+            for p in sorted(STICKERS_DIR.glob("*.png"))
+        ]
+
     # ---- Export ------------------------------------------------------------
 
     @app.post("/api/export")
@@ -173,6 +243,8 @@ def create_app(videos_dir: Path) -> FastAPI:
     if project.videos_dir.exists():
         app.mount("/media/source", StaticFiles(directory=str(project.videos_dir)), name="source")
     app.mount("/media/edit", StaticFiles(directory=str(project.edit_dir)), name="edit")
+    if STICKERS_DIR.exists():
+        app.mount("/static/stickers", StaticFiles(directory=str(STICKERS_DIR)), name="stickers")
     if FRONTEND_DIST.exists():
         app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
 

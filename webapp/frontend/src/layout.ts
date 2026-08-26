@@ -13,7 +13,7 @@ export function computeVideoLayout(clips: VideoClip[]): ClipLayout[] {
   const layout: ClipLayout[] = [];
   let cumulative = 0;
   clips.forEach((c, i) => {
-    const duration = Math.max(0, c.out - c.in);
+    const duration = Math.max(0, c.out - c.in) / (c.speed || 1);
     if (i === 0) {
       layout.push({ start: 0, duration, end: duration });
       cumulative = duration;

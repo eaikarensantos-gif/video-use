@@ -148,19 +148,70 @@ def is_hdr_source(video: Path) -> bool:
 def is_portrait_source(video: Path) -> bool:
     """Return True if the video's height > width (portrait / vertical)."""
     try:
-        out = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0",
-             "-show_entries", "stream=width,height",
-             "-of", "csv=p=0", str(video)],
-            capture_output=True, text=True, check=True,
-        )
-        w, h = map(int, out.stdout.strip().split(","))
+        w, h = probe_dimensions(video)
         return h > w
     except Exception:
         return False
 
 
+def probe_dimensions(video: Path) -> tuple[int, int]:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width,height",
+         "-of", "csv=p=0", str(video)],
+        capture_output=True, text=True, check=True,
+    )
+    w, h = map(int, out.stdout.strip().split(","))
+    return w, h
+
+
+# -------- Ken Burns (zoom/pan) -----------------------------------------------
+
+
+def build_zoompan_filter(zoom_cfg: dict, duration: float, width: int, height: int, fps: int = 24) -> str:
+    """Build a `zoompan=...` filter for a slow zoom-in or zoom-out over the
+    clip's duration — the practical stand-in for full keyframe animation in
+    an ffmpeg-filter-graph renderer: one motion, not an arbitrary property
+    curve, but genuinely smooth and centered on the frame.
+
+    `zoom_cfg`: {"type": "in" | "out", "amount": 0.15} — amount is the total
+    zoom delta over the clip (0.15 = ends/starts 15% zoomed in).
+
+    Applied at the source's native resolution (`width`/`height`) as the
+    first step in the filter chain, before the scale/grade/setpts that
+    follow — `zoompan`'s `s=` option needs literal dimensions, not an
+    expression, so it can't reference the later scale target directly.
+    """
+    amount = max(0.01, float(zoom_cfg.get("amount", 0.15)))
+    total_frames = max(1, round(duration * fps))
+    step = amount / total_frames
+    if zoom_cfg.get("type") == "out":
+        z_expr = f"if(eq(on,0),{1 + amount:.4f},max(zoom-{step:.6f},1.0))"
+    else:  # "in" (default)
+        z_expr = f"min(zoom+{step:.6f},{1 + amount:.4f})"
+    x_expr = "iw/2-(iw/zoom/2)"
+    y_expr = "ih/2-(ih/zoom/2)"
+    return f"zoompan=z='{z_expr}':x='{x_expr}':y='{y_expr}':d=1:s={width}x{height}:fps={fps}"
+
+
 # -------- Per-segment extraction (Rule 2 + Rule 3) --------------------------
+
+
+def atempo_chain(speed: float) -> str:
+    """`atempo` only accepts 0.5-2.0 per instance; chain instances to cover
+    more extreme speed changes (e.g. 4x = two `atempo=2.0` in a row)."""
+    if 0.5 <= speed <= 2.0:
+        return f"atempo={speed:.4f}"
+    parts: list[str] = []
+    remaining = speed
+    while remaining > 2.0:
+        parts.append("atempo=2.0")
+        remaining /= 2.0
+    while remaining < 0.5:
+        parts.append("atempo=0.5")
+        remaining /= 0.5
+    parts.append(f"atempo={remaining:.4f}")
+    return ",".join(parts)
 
 
 def extract_segment(
@@ -171,6 +222,8 @@ def extract_segment(
     out_path: Path,
     preview: bool = False,
     draft: bool = False,
+    speed: float = 1.0,
+    zoom: dict | None = None,
 ) -> None:
     """Extract a cut range as its own MP4 with grade + 30ms audio fades baked in.
 
@@ -193,14 +246,26 @@ def extract_segment(
     vf_parts: list[str] = []
     if is_hdr_source(source):
         vf_parts.append(TONEMAP_CHAIN)
+    if zoom and zoom.get("type") in ("in", "out"):
+        native_w, native_h = probe_dimensions(source)
+        vf_parts.append(build_zoompan_filter(zoom, duration, native_w, native_h))
     vf_parts.append(scale)
     if grade_filter:
         vf_parts.append(grade_filter)
+    if speed != 1.0:
+        vf_parts.append(f"setpts=PTS/{speed:.4f}")
     vf = ",".join(vf_parts)
 
-    # 30ms audio fades at both edges (Rule 3) — prevent pops
-    fade_out_start = max(0.0, duration - 0.03)
-    af = f"afade=t=in:st=0:d=0.03,afade=t=out:st={fade_out_start:.3f}:d=0.03"
+    # Speed changes the segment's actual output duration — fades (Rule 3)
+    # are timed against that, not the source-timeline duration, since they
+    # need to land exactly at the sped-up clip's edges.
+    output_duration = duration / speed if speed else duration
+    af_parts: list[str] = []
+    if speed != 1.0:
+        af_parts.append(atempo_chain(speed))
+    fade_out_start = max(0.0, output_duration - 0.03)
+    af_parts.append(f"afade=t=in:st=0:d=0.03,afade=t=out:st={fade_out_start:.3f}:d=0.03")
+    af = ",".join(af_parts)
 
     if draft:
         preset, crf = "ultrafast", "28"
@@ -211,9 +276,14 @@ def extract_segment(
 
     cmd = [
         "ffmpeg", "-y",
+        # -t as an INPUT option (before -i) bounds how much of the SOURCE is
+        # read — the correct semantics whether or not a speed filter is about
+        # to retime that footage on the output side. -t placed after -i would
+        # instead bound the (already-retimed) output timeline, which for
+        # speed != 1.0 silently reads the wrong amount of source content.
         "-ss", f"{seg_start:.3f}",
-        "-i", str(source),
         "-t", f"{duration:.3f}",
+        "-i", str(source),
         "-vf", vf,
         "-af", af,
         "-c:v", "libx264", "-preset", preset, "-crf", crf,
@@ -268,11 +338,15 @@ def extract_all_segments(
         else:
             seg_filter = resolved
 
+        speed = float(r.get("speed", 1.0)) or 1.0
+        zoom = r.get("zoom")
         note = r.get("beat") or r.get("note") or ""
-        print(f"  [{i:02d}] {src_name}  {start:7.2f}-{end:7.2f}  ({duration:5.2f}s)  {note}")
+        speed_note = f"  speed={speed:g}x" if speed != 1.0 else ""
+        zoom_note = f"  zoom={zoom['type']}" if zoom and zoom.get("type") in ("in", "out") else ""
+        print(f"  [{i:02d}] {src_name}  {start:7.2f}-{end:7.2f}  ({duration:5.2f}s)  {note}{speed_note}{zoom_note}")
         if is_auto:
             print(f"        grade: {seg_filter or '(none)'}")
-        extract_segment(src_path, start, duration, seg_filter, out_path, preview=preview, draft=draft)
+        extract_segment(src_path, start, duration, seg_filter, out_path, preview=preview, draft=draft, speed=speed, zoom=zoom)
         seg_paths.append(out_path)
 
     return seg_paths
@@ -431,7 +505,8 @@ def build_master_srt(edl: dict, edit_dir: Path, out_path: Path) -> None:
         src_name = r["source"]
         seg_start = float(r["start"])
         seg_end = float(r["end"])
-        seg_duration = seg_end - seg_start
+        speed = float(r.get("speed", 1.0)) or 1.0
+        seg_duration = (seg_end - seg_start) / speed
 
         tr_path = transcripts_dir / f"{src_name}.json"
         if not tr_path.exists():
@@ -461,8 +536,8 @@ def build_master_srt(edl: dict, edit_dir: Path, out_path: Path) -> None:
         for chunk in chunks:
             local_start = max(seg_start, chunk[0].get("start", seg_start))
             local_end = min(seg_end, chunk[-1].get("end", seg_end))
-            out_start = max(0.0, local_start - seg_start) + seg_offset
-            out_end = max(0.0, local_end - seg_start) + seg_offset
+            out_start = max(0.0, local_start - seg_start) / speed + seg_offset
+            out_end = max(0.0, local_end - seg_start) / speed + seg_offset
             if out_end <= out_start:
                 out_end = out_start + 0.4
             text = " ".join((w.get("text") or "").strip() for w in chunk)
@@ -594,11 +669,13 @@ def apply_loudnorm_two_pass(
 
 # -------- Text overlay cards (drawtext, composited like video overlays) -----
 
-TEXT_POSITIONS = {
-    "top": "x=(w-text_w)/2:y=h*0.08",
-    "center": "x=(w-text_w)/2:y=(h-text_h)/2",
-    "bottom": "x=(w-text_w)/2:y=h*0.85",
+TEXT_X = "(w-text_w)/2"
+TEXT_Y = {
+    "top": "h*0.08",
+    "center": "(h-text_h)/2",
+    "bottom": "h*0.85",
 }
+TEXT_ANIMATIONS = {"none", "fade", "slide_up"}
 
 
 def escape_drawtext(text: str) -> str:
@@ -618,31 +695,141 @@ def build_drawtext_filter(overlay: dict) -> str:
     Expected shape:
         {"type": "text", "text": "...", "start_in_output": 0.0, "duration": 2.0,
          "style": {"position": "bottom", "font_size": 54, "color": "white",
-                   "background": true, "font": "Helvetica"}}
+                   "background": true, "font": "Helvetica",
+                   "animation": "none" | "fade" | "slide_up"}}
+
+    `animation` is an entrance effect over the first ~0.3s of the window
+    (capped at a third of the card's duration for very short cards):
+    "fade" ramps opacity in (and back out in the closing 0.3s), "slide_up"
+    animates the y position in from 40px below its resting spot.
     """
     style = overlay.get("style") or {}
     text = escape_drawtext(str(overlay.get("text", "")))
     t = float(overlay["start_in_output"])
     dur = float(overlay["duration"])
     end = t + dur
+    ramp = min(0.3, dur / 3)
 
     font_size = int(style.get("font_size", 54))
     color = style.get("color", "white")
     font = style.get("font", "Helvetica")
-    position = TEXT_POSITIONS.get(style.get("position", "bottom"), TEXT_POSITIONS["bottom"])
+    y_expr = TEXT_Y.get(style.get("position", "bottom"), TEXT_Y["bottom"])
+    animation = style.get("animation", "none")
+    if animation not in TEXT_ANIMATIONS:
+        animation = "none"
+
+    if animation == "slide_up":
+        progress = f"min(1,max(0,(t-{t:.3f})/{ramp:.3f}))"
+        y_expr = f"({y_expr})+40*(1-{progress})"
 
     parts = [
         f"text='{text}'",
         f"font='{font}'",
         f"fontsize={font_size}",
         f"fontcolor={color}",
-        position,
+        f"x={TEXT_X}",
+        f"y='{y_expr}'",
         f"enable='between(t,{t:.3f},{end:.3f})'",
     ]
+    if animation == "fade":
+        alpha_expr = (
+            f"if(lt(t,{t:.3f}+{ramp:.3f}),(t-{t:.3f})/{ramp:.3f},"
+            f"if(lt(t,{end:.3f}-{ramp:.3f}),1,({end:.3f}-t)/{ramp:.3f}))"
+        )
+        parts.append(f"alpha='{alpha_expr}'")
     if style.get("background", True):
         box_color = style.get("background_color", "black@0.5")
         parts.append(f"box=1:boxcolor={box_color}:boxborderw=16")
     return "drawtext=" + ":".join(parts)
+
+
+# -------- Sticker overlays (static image, positioned/scaled) ----------------
+
+
+def build_sticker_filters(overlay: dict, input_idx: int, current_label: str, out_label: str) -> list[str]:
+    """Build the scale+overlay filter pair for a sticker-type overlay entry.
+
+    Expected shape:
+        {"type": "sticker", "file": "...", "start_in_output": 0.0, "duration": 2.0,
+         "x": 0.5, "y": 0.5, "scale": 0.3}
+    `x`/`y` are the sticker's center as a fraction of frame width/height
+    (0.5, 0.5 = centered). `scale` is the sticker's width as a fraction of
+    frame width, height keeps aspect ratio.
+    """
+    t = float(overlay["start_in_output"])
+    dur = float(overlay["duration"])
+    end = t + dur
+    x = float(overlay.get("x", 0.5))
+    y = float(overlay.get("y", 0.5))
+    scale = float(overlay.get("scale", 0.3))
+    scaled_label = f"[stk{input_idx}]"
+    return [
+        f"[{input_idx}:v]scale=iw*{scale}:-1{scaled_label}",
+        f"{current_label}{scaled_label}overlay="
+        f"x=(W*{x})-w/2:y=(H*{y})-h/2:enable='between(t,{t:.3f},{end:.3f})'{out_label}",
+    ]
+
+
+# -------- Background audio mixing (music, ambience) -------------------------
+
+
+def mix_audio_tracks(video_path: Path, audio_tracks: list[dict], out_path: Path, edit_dir: Path) -> None:
+    """Mix background audio tracks (music, ambience) into `video_path`'s
+    existing audio, keeping the video stream untouched (`-c:v copy`).
+
+    Each entry:
+        {"file": "...", "start_in_output": 0.0, "duration": 5.0,
+         "trim_in": 0.0, "volume": 1.0, "fade_in": 0.0, "fade_out": 0.0}
+    `trim_in`/`duration` select the slice of the source file to use;
+    `start_in_output` positions that slice on the output timeline.
+    """
+    inputs: list[str] = ["-i", str(video_path)]
+    filter_parts: list[str] = []
+    mix_labels = ["[0:a]"]
+
+    for i, track in enumerate(audio_tracks, start=1):
+        src = resolve_path(track["file"], edit_dir)
+        trim_in = float(track.get("trim_in", 0.0))
+        dur = float(track["duration"])
+        inputs += ["-ss", f"{trim_in:.3f}", "-t", f"{dur:.3f}", "-i", str(src)]
+
+        vol = float(track.get("volume", 1.0))
+        fade_in = float(track.get("fade_in", 0.0))
+        fade_out = float(track.get("fade_out", 0.0))
+        start = float(track.get("start_in_output", 0.0))
+
+        chain = [f"volume={vol:.3f}"]
+        if fade_in > 0:
+            chain.append(f"afade=t=in:st=0:d={fade_in:.3f}")
+        if fade_out > 0:
+            chain.append(f"afade=t=out:st={max(0.0, dur - fade_out):.3f}:d={fade_out:.3f}")
+        # `all=1` applies the delay across every channel regardless of layout
+        # (mono vs stereo source), avoiding a channel-count mismatch.
+        chain.append(f"adelay=delays={int(start * 1000)}:all=1")
+
+        label = f"[bg{i}]"
+        filter_parts.append(f"[{i}:a]{','.join(chain)}{label}")
+        mix_labels.append(label)
+
+    # duration=first keeps the mix locked to the base video's audio length,
+    # regardless of how long the background tracks run.
+    filter_parts.append(
+        f"{''.join(mix_labels)}amix=inputs={len(mix_labels)}:duration=first:dropout_transition=0[aout]"
+    )
+    filter_complex = ";".join(filter_parts)
+
+    cmd = [
+        "ffmpeg", "-y",
+        *inputs,
+        "-filter_complex", filter_complex,
+        "-map", "0:v", "-map", "[aout]",
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+        "-movflags", "+faststart",
+        str(out_path),
+    ]
+    print(f"mixing {len(audio_tracks)} background audio track(s) → {out_path.name}")
+    run_ffmpeg(cmd)
 
 
 # -------- Final compositing (Rule 1 + Rule 4) -------------------------------
@@ -655,18 +842,22 @@ def build_final_composite(
     out_path: Path,
     edit_dir: Path,
 ) -> None:
-    """Final pass: base → video overlays (PTS-shifted) → text cards → subtitles LAST → out.
+    """Final pass: base → video overlays (PTS-shifted) → stickers → text cards
+    → subtitles LAST → out.
 
     `overlays` entries default to video-file overlays (`{"file": ...}`) and
-    may also be text cards (`{"type": "text", "text": ..., "style": {...}}`),
-    rendered via drawtext instead of an extra video input. Text cards are
-    composited after video overlays but still before subtitles (Rule 1).
+    may also be text cards (`{"type": "text", ...}`, drawtext) or stickers
+    (`{"type": "sticker", "file": <image>, "x":.., "y":.., "scale":..}`,
+    a positioned/scaled static image). Composited in that order, still
+    before subtitles (Rule 1).
 
     If there is nothing to composite, just copy base to out.
     """
-    video_overlays = [ov for ov in overlays if ov.get("type") != "text"]
+    video_overlays = [ov for ov in overlays if ov.get("type") not in ("text", "sticker")]
+    sticker_overlays = [ov for ov in overlays if ov.get("type") == "sticker"]
     text_overlays = [ov for ov in overlays if ov.get("type") == "text"]
     has_overlays = bool(video_overlays)
+    has_stickers = bool(sticker_overlays)
     has_text = bool(text_overlays)
     # A zero-byte SRT (e.g. no transcript was available for any source) makes
     # libass fail with "Unable to open" — treat it the same as "no subtitles".
@@ -676,7 +867,7 @@ def build_final_composite(
         and subtitles_path.stat().st_size > 0
     )
 
-    if not has_overlays and not has_text and not has_subs:
+    if not has_overlays and not has_stickers and not has_text and not has_subs:
         # Nothing to do — just rename/copy base to final name
         run(["ffmpeg", "-y", "-i", str(base_path), "-c", "copy", str(out_path)], quiet=True)
         return
@@ -685,9 +876,13 @@ def build_final_composite(
     for ov in video_overlays:
         ov_path = resolve_path(ov["file"], edit_dir)
         inputs += ["-i", str(ov_path)]
+    sticker_start_idx = 1 + len(video_overlays)
+    for ov in sticker_overlays:
+        ov_path = resolve_path(ov["file"], edit_dir)
+        inputs += ["-loop", "1", "-t", f"{float(ov['duration']):.3f}", "-i", str(ov_path)]
 
     filter_parts: list[str] = []
-    # PTS-shift every overlay so its frame 0 lands at start_in_output
+    # PTS-shift every video overlay so its frame 0 lands at start_in_output
     for idx, ov in enumerate(video_overlays, start=1):
         t = float(ov["start_in_output"])
         filter_parts.append(f"[{idx}:v]setpts=PTS-STARTPTS+{t}/TB[a{idx}]")
@@ -704,7 +899,14 @@ def build_final_composite(
         )
         current = next_label
 
-    # Text cards — drawtext, chained after video overlays
+    # Stickers — scaled + positioned image overlays, chained next
+    for i, ov in enumerate(sticker_overlays):
+        input_idx = sticker_start_idx + i
+        next_label = f"[s{input_idx}]"
+        filter_parts.extend(build_sticker_filters(ov, input_idx, current, next_label))
+        current = next_label
+
+    # Text cards — drawtext, chained after overlays/stickers
     for idx, ov in enumerate(text_overlays, start=1):
         next_label = f"[txt{idx}]"
         filter_parts.append(f"{current}{build_drawtext_filter(ov)}{next_label}")
@@ -718,8 +920,8 @@ def build_final_composite(
         )
         out_label = "[outv]"
     else:
-        # Rename the last overlay/text output to [outv] for consistency
-        if has_overlays or has_text:
+        # Rename the last stage's output to [outv] for consistency
+        if has_overlays or has_stickers or has_text:
             filter_parts.append(f"{current}null[outv]")
             out_label = "[outv]"
         else:
@@ -740,7 +942,8 @@ def build_final_composite(
         str(out_path),
     ]
     print(f"compositing → {out_path.name}")
-    print(f"  overlays: {len(overlays)}, subtitles: {'yes' if has_subs else 'no'}")
+    print(f"  overlays: {len(video_overlays)}, stickers: {len(sticker_overlays)}, "
+          f"text: {len(text_overlays)}, subtitles: {'yes' if has_subs else 'no'}")
     run_ffmpeg(cmd)
 
 
@@ -819,16 +1022,21 @@ def main() -> None:
 
     # 4. Composite (overlays + subtitles LAST) → intermediate (pre-loudnorm) path
     overlays = edl.get("overlays") or []
-    if args.no_loudnorm:
-        # Composite directly to final output
-        build_final_composite(base_path, overlays, subs_path, out_path, edit_dir)
-    else:
-        # Composite to a temp file, then run loudnorm → final output
-        tmp_composite = out_path.with_suffix(".prenorm.mp4")
-        build_final_composite(base_path, overlays, subs_path, tmp_composite, edit_dir)
+    composite_path = out_path if args.no_loudnorm else out_path.with_suffix(".prenorm.mp4")
+    build_final_composite(base_path, overlays, subs_path, composite_path, edit_dir)
+
+    # 5. Mix in background audio tracks (music, ambience), if any
+    audio_tracks = edl.get("audio_tracks") or []
+    if audio_tracks:
+        mixed_path = composite_path.with_suffix(".withmusic.mp4")
+        mix_audio_tracks(composite_path, audio_tracks, mixed_path, edit_dir)
+        composite_path.unlink(missing_ok=True)
+        mixed_path.rename(composite_path)
+
+    if not args.no_loudnorm:
         print("loudness normalization → social-ready (-14 LUFS / -1 dBTP / LRA 11)")
-        apply_loudnorm_two_pass(tmp_composite, out_path, preview=args.draft)
-        tmp_composite.unlink(missing_ok=True)
+        apply_loudnorm_two_pass(composite_path, out_path, preview=args.draft)
+        composite_path.unlink(missing_ok=True)
 
     size_mb = out_path.stat().st_size / (1024 * 1024)
     print(f"\ndone: {out_path} ({size_mb:.1f} MB)")

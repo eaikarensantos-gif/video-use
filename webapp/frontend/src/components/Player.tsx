@@ -55,10 +55,12 @@ export default function Player() {
   useEffect(() => {
     const v = videoRef.current;
     if (!v || !activeClip || !activeLayout) return;
-    const sourceTime = activeClip.in + (playhead - activeLayout.start);
+    const speed = activeClip.speed || 1;
+    const sourceTime = activeClip.in + (playhead - activeLayout.start) * speed;
     const apply = () => {
-      const tolerance = playing ? 0.35 : 0.03;
+      const tolerance = playing ? 0.35 * speed : 0.03;
       if (Math.abs(v.currentTime - sourceTime) > tolerance) v.currentTime = sourceTime;
+      v.playbackRate = speed;
       if (playing) v.play().catch(() => {});
       else v.pause();
     };
@@ -133,9 +135,24 @@ export default function Player() {
             {t.text}
           </div>
         ))}
-        {activeOverlays.length > 0 && (
+        {activeOverlays.filter((o) => o.kind === "sticker").map((o) => (
+          <img
+            key={o.id}
+            src={o.file}
+            alt=""
+            style={{
+              position: "absolute",
+              left: `${(o.x ?? 0.5) * 100}%`,
+              top: `${(o.y ?? 0.5) * 100}%`,
+              width: `${(o.scale ?? 0.3) * 100}%`,
+              transform: "translate(-50%, -50%)",
+              pointerEvents: "none",
+            }}
+          />
+        ))}
+        {activeOverlays.some((o) => o.kind !== "sticker") && (
           <div style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", padding: "2px 8px", borderRadius: 4, fontSize: 10 }}>
-            overlay: {activeOverlays.map((o) => o.file.split("/").pop()).join(", ")}
+            overlay: {activeOverlays.filter((o) => o.kind !== "sticker").map((o) => o.file.split("/").pop()).join(", ")}
           </div>
         )}
       </div>

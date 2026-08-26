@@ -14,6 +14,7 @@ from bridge import edl_to_timeline, empty_timeline
 from mediainfo import probe_media
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm"}
+AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
 
 
 class Project:
@@ -44,6 +45,23 @@ class Project:
                 return p
         return None
 
+    def list_audio_files(self) -> list[Path]:
+        """Music/ambience files sitting alongside the raw footage — used for
+        the background-audio track. Video sources also have audio, but the
+        UI drives that separately (each clip carries its own segment)."""
+        if not self.videos_dir.exists():
+            return []
+        return sorted(
+            p for p in self.videos_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in AUDIO_EXTS
+        )
+
+    def find_audio(self, name: str) -> Path | None:
+        for p in self.list_audio_files():
+            if p.stem == name:
+                return p
+        return None
+
     def load_timeline(self) -> dict:
         if self.timeline_path.exists():
             timeline = json.loads(self.timeline_path.read_text())
@@ -60,7 +78,7 @@ class Project:
                     media[name] = probe_media(Path(path))
                 except Exception:
                     media[name] = {}
-            timeline = edl_to_timeline(edl, media)
+            timeline = edl_to_timeline(edl, media, self.videos_dir)
             self._merge_new_sources(timeline)
             return timeline
 
@@ -83,6 +101,6 @@ class Project:
         from bridge import timeline_to_edl
 
         self.timeline_path.write_text(json.dumps(timeline, indent=2))
-        edl = timeline_to_edl(timeline)
+        edl = timeline_to_edl(timeline, self.videos_dir)
         self.edl_path.write_text(json.dumps(edl, indent=2))
         return timeline

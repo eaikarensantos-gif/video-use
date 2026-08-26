@@ -1,8 +1,10 @@
 # video-use editor (visual UI)
 
 A local, CapCut-style visual editor for video-use: a media bin, a real-time
-player, and a multi-track timeline (video / text / overlay) with drag-to-trim,
-split, transitions, per-clip color grade, and export — all in the browser.
+player, and a multi-track timeline (video / text / overlay / audio) with
+drag-to-trim, split, transitions, per-clip color grade, speed, Ken Burns
+zoom/pan, stickers, background music, file upload, and export — all in the
+browser.
 
 It is **not a replacement** for the chat-driven flow — it's a second way to
 drive the same project. Both read and write the same `<videos_dir>/edit/`
@@ -50,10 +52,14 @@ cd webapp/frontend && npm run dev   # http://localhost:5173, proxies /api and /m
 
 ## Editor basics
 
-- **Media bin** (left) — drag a clip onto the video track, or double-click to append.
-- **Player** (center top) — space to play/pause, scrub the transport bar or the timeline ruler.
-- **Timeline** (bottom) — drag clip edges to trim, drag a clip to reorder, `S` to split at the playhead, `Delete` to remove the selected clip, `+ Text at playhead` to drop a title card.
-- **Inspector** (right) — per-clip grade preset, transition-out type/duration, and text card styling.
+- **Media bin** (left) — drag a clip onto the video track, or double-click to append. Drag files in from your OS file browser (or click **+ Import**) to add new footage/audio to the project without leaving the browser. Below it: a small **sticker** library (drag onto the Overlays track) and a **Music** list (drag onto the Audio track) for any audio files sitting in the videos folder.
+- **Player** (center top) — space to play/pause, scrub the transport bar or the timeline ruler. Reflects per-clip speed (`playbackRate`) and shows the active sticker/text overlay live.
+- **Timeline** (bottom) — drag clip edges to trim, drag a clip to reorder, `S` to split at the playhead, `Delete` to remove the selected clip, `+ Text at playhead` to drop a title card. The Audio track's clips trim/move the same way, adjusting `trimIn` on the left edge.
+- **Inspector** (right), per clip type:
+  - **Video** — grade preset (10 presets, see `helpers/grade.py`), transition-out type/duration, **speed** (0.25x–4x), **Ken Burns zoom/pan** (in/out, adjustable amount).
+  - **Text** — content, position, font size/color, background chip, **animation** (fade or slide-up entrance).
+  - **Sticker** — position (x/y) and size, as fractions of the frame.
+  - **Audio** — start/duration, volume, fade in/out.
 - **Export** — preview (fast, 720p) or final (1080p, loudness-normalized), with a live render log and a download link when done.
 
 ## What's intentionally out of scope (v1)
@@ -61,8 +67,9 @@ cd webapp/frontend && npm run dev   # http://localhost:5173, proxies /api and /m
 - Generating new overlay animations (HyperFrames/Remotion/Manim/PIL) — those
   are still built by the chat flow's sub-agents per `SKILL.md`; the overlay
   track here lets you retime/trim clips they already produced.
-- Uploading media through the browser — drop files into the videos folder
-  directly, same as today.
+- A full keyframe/property-curve animation system — Ken Burns (one zoom/pan
+  motion per clip) is the practical stand-in for an ffmpeg-filter-graph
+  renderer; it is not arbitrary keyframing of position/scale/opacity.
 - True pixel-accurate overlay/transition compositing in the live preview —
   the preview is a fast approximation; `helpers/render.py` (via ffmpeg) is
   always the source of truth for the actual output.

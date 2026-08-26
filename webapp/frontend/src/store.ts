@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api } from "./api";
-import type { MediaItem, TextClip, Timeline, Track, VideoClip } from "./types";
+import type { AudioClip, AudioItem, MediaItem, OverlayClip, Sticker, TextClip, Timeline, Track, VideoClip } from "./types";
 import { totalVideoDuration } from "./layout";
 
 let idCounter = 0;
@@ -17,6 +17,8 @@ interface Selection {
 interface EditorState {
   timeline: Timeline | null;
   media: MediaItem[];
+  stickers: Sticker[];
+  audioFiles: AudioItem[];
   loading: boolean;
   saving: boolean;
   dirty: boolean;
@@ -28,6 +30,9 @@ interface EditorState {
   future: Timeline[];
 
   load: () => Promise<void>;
+  refreshLibraries: () => Promise<void>;
+  uploadFiles: (files: File[]) => Promise<void>;
+  uploading: boolean;
   saveNow: () => Promise<void>;
   scheduleSave: () => void;
 
@@ -47,7 +52,10 @@ interface EditorState {
 
   addTextClip: (start: number, duration: number) => void;
   updateTextClip: (clipId: string, patch: Partial<TextClip>) => void;
-  updateOverlayClip: (clipId: string, patch: Partial<import("./types").OverlayClip>) => void;
+  updateOverlayClip: (clipId: string, patch: Partial<OverlayClip>) => void;
+  addStickerClip: (file: string, start: number, duration: number) => void;
+  addAudioClip: (file: string, start: number, duration: number) => void;
+  updateAudioClip: (clipId: string, patch: Partial<AudioClip>) => void;
 
   undo: () => void;
   redo: () => void;
@@ -67,7 +75,10 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 export const useEditor = create<EditorState>((set, get) => ({
   timeline: null,
   media: [],
+  stickers: [],
+  audioFiles: [],
   loading: false,
+  uploading: false,
   saving: false,
   dirty: false,
   selection: null,
@@ -79,8 +90,27 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   load: async () => {
     set({ loading: true });
-    const [timeline, media] = await Promise.all([api.timeline(), api.media()]);
-    set({ timeline, media, loading: false, history: [], future: [], dirty: false });
+    const [timeline, media, stickers, audioFiles] = await Promise.all([
+      api.timeline(), api.media(), api.stickers(), api.audioFiles(),
+    ]);
+    set({ timeline, media, stickers, audioFiles, loading: false, history: [], future: [], dirty: false });
+  },
+
+  refreshLibraries: async () => {
+    const [media, audioFiles] = await Promise.all([api.media(), api.audioFiles()]);
+    set({ media, audioFiles });
+  },
+
+  uploadFiles: async (files) => {
+    set({ uploading: true });
+    try {
+      for (const file of files) {
+        await api.uploadMedia(file).catch((err) => console.error("upload failed", file.name, err));
+      }
+      await get().refreshLibraries();
+    } finally {
+      set({ uploading: false });
+    }
   },
 
   saveNow: async () => {
@@ -151,12 +181,13 @@ export const useEditor = create<EditorState>((set, get) => ({
       let cumulative = 0;
       for (let i = 0; i < clips.length; i++) {
         const c = clips[i];
-        const dur = c.out - c.in;
+        const speed = c.speed || 1;
+        const dur = (c.out - c.in) / speed;
         const overlapBefore = i > 0 ? overlapFor(clips[i - 1]) : 0;
         const start = cumulative - overlapBefore;
         const end = start + dur;
         if (time > start + 0.02 && time < end - 0.02) {
-          const cutAtSource = c.in + (time - start);
+          const cutAtSource = c.in + (time - start) * speed;
           const left: VideoClip = { ...c, id: newId("clip"), out: cutAtSource, transitionOut: undefined };
           const right: VideoClip = { ...c, id: newId("clip"), in: cutAtSource };
           clips.splice(i, 1, left, right);
@@ -210,6 +241,45 @@ export const useEditor = create<EditorState>((set, get) => ({
   updateOverlayClip: (clipId, patch) => {
     withHistory(get, set, (tl) => {
       const track = tl.tracks.find((t) => t.type === "overlay");
+      if (!track) return tl;
+      const clip = track.clips.find((c) => c.id === clipId) as any;
+      if (clip) Object.assign(clip, patch);
+      return tl;
+    });
+  },
+
+  addStickerClip: (file, start, duration) => {
+    withHistory(get, set, (tl) => {
+      const track = tl.tracks.find((t) => t.type === "overlay");
+      if (!track) return tl;
+      const clip: OverlayClip = {
+        id: newId("sticker"),
+        kind: "sticker",
+        file,
+        start,
+        duration,
+        x: 0.5,
+        y: 0.5,
+        scale: 0.3,
+      };
+      track.clips.push(clip);
+      return tl;
+    });
+  },
+
+  addAudioClip: (file, start, duration) => {
+    withHistory(get, set, (tl) => {
+      const track = tl.tracks.find((t) => t.type === "audio");
+      if (!track) return tl;
+      const clip: AudioClip = { id: newId("audio"), file, start, duration, trimIn: 0, volume: 1, fadeIn: 0, fadeOut: 0 };
+      track.clips.push(clip);
+      return tl;
+    });
+  },
+
+  updateAudioClip: (clipId, patch) => {
+    withHistory(get, set, (tl) => {
+      const track = tl.tracks.find((t) => t.type === "audio");
       if (!track) return tl;
       const clip = track.clips.find((c) => c.id === clipId) as any;
       if (clip) Object.assign(clip, patch);
