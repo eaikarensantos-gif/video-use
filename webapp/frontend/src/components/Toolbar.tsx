@@ -1,4 +1,5 @@
 import { useEditor } from "../store";
+import { IconExport, IconLogo, IconRedo, IconScissors, IconSparkle, IconUndo } from "../icons";
 
 export default function Toolbar({ onExport, onAiEdit }: { onExport: () => void; onAiEdit: () => void }) {
   const dirty = useEditor((s) => s.dirty);
@@ -16,15 +17,19 @@ export default function Toolbar({ onExport, onAiEdit }: { onExport: () => void; 
 
   return (
     <div className="toolbar">
-      <div className="title">video-use editor</div>
+      <div className="brand">
+        <IconLogo size={22} />
+        <div className="title">video-use</div>
+      </div>
+      <div className="divider" />
       <button className="ghost" disabled={!history.length} onClick={undo} title="Undo">
-        ↶ Undo
+        <IconUndo size={14} /> Undo
       </button>
       <button className="ghost" disabled={!future.length} onClick={redo} title="Redo">
-        ↷ Redo
+        <IconRedo size={14} /> Redo
       </button>
       <button className="ghost" onClick={() => splitVideoClipAt(playhead)} title="Split at playhead (S)">
-        ✂ Split
+        <IconScissors size={14} /> Split
       </button>
       <div className="spacer" />
       <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-1)", fontSize: 11 }}>
@@ -39,10 +44,10 @@ export default function Toolbar({ onExport, onAiEdit }: { onExport: () => void; 
       </label>
       <div className="status">{statusText}</div>
       <button className="ghost" onClick={onAiEdit} title="Propose a cut with the real AI editor, review, then apply">
-        ✨ AI Edit
+        <IconSparkle size={14} /> AI Edit
       </button>
       <button className="primary" onClick={onExport}>
-        Export
+        <IconExport size={14} /> Export
       </button>
     </div>
   );

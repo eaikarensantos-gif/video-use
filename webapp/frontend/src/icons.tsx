@@ -138,6 +138,14 @@ export function IconUpload({ size = 16 }: IconProps) {
   );
 }
 
+export function IconCheck({ size = 16 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M4 12.5 9 17.5 20 6.5" />
+    </svg>
+  );
+}
+
 export function IconPlus({ size = 16 }: IconProps) {
   return (
     <svg {...base(size)}>

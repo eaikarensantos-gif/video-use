@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { api } from "../api";
 import { useEditor } from "../store";
+import { IconCheck, IconMusic, IconUpload, IconVideo } from "../icons";
 
 /** Polls a transcription job until it's done/errored, then refreshes the
  * media list so `transcribed` badges update. Returns a per-name busy set
@@ -106,7 +107,7 @@ export default function MediaBin() {
       }}
     >
       <div className="media-bin-header">
-        <h3>Media</h3>
+        <h3><IconVideo size={12} /> Media</h3>
         {media.length > 0 && (
           <button
             className="ghost"
@@ -118,7 +119,7 @@ export default function MediaBin() {
           </button>
         )}
         <button className="ghost" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-          {uploading ? "Uploading…" : "+ Import"}
+          <IconUpload size={12} /> {uploading ? "Uploading…" : "Import"}
         </button>
         <input
           ref={fileInputRef}
@@ -161,7 +162,7 @@ export default function MediaBin() {
             {errors[m.name] && <div className="dur" style={{ color: "var(--danger)" }}>{errors[m.name]}</div>}
           </div>
           {m.transcribed ? (
-            <span className="badge-ok" title="Transcript available">✓ transcribed</span>
+            <span className="badge-ok" title="Transcript available"><IconCheck size={11} /> transcribed</span>
           ) : (
             <button
               className="ghost"
@@ -201,7 +202,7 @@ export default function MediaBin() {
 
       {audioFiles.length > 0 && (
         <>
-          <h3 style={{ marginTop: 18 }}>Music</h3>
+          <h3 style={{ marginTop: 18 }}><IconMusic size={12} /> Music</h3>
           {audioFiles.map((a) => (
             <div
               key={a.name}
@@ -214,7 +215,7 @@ export default function MediaBin() {
               onDoubleClick={() => addAudioClip(a.stream_url, playhead, a.duration ?? 5)}
               title="Drag onto the Audio track, or double-click to add at the playhead"
             >
-              <div className="audio-icon">♪</div>
+              <div className="audio-icon"><IconMusic size={16} /></div>
               <div className="meta">
                 <div className="name">{a.name}</div>
                 <div className="dur">{fmtDur(a.duration)}</div>

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useEditor } from "../store";
 import { computeVideoLayout } from "../layout";
 import type { OverlayClip, TextClip, VideoClip } from "../types";
+import { IconPause, IconPlay, IconSkipBack } from "../icons";
 
 function fmt(t: number): string {
   const m = Math.floor(t / 60);
@@ -157,9 +158,11 @@ export default function Player() {
         )}
       </div>
       <div className="transport">
-        <button className="ghost" onClick={() => setPlayhead(0)} title="Jump to start">⏮</button>
+        <button className="ghost" onClick={() => setPlayhead(0)} title="Jump to start">
+          <IconSkipBack size={14} />
+        </button>
         <button onClick={() => setPlaying(!playing)} title="Play/Pause (space)">
-          {playing ? "⏸" : "▶"}
+          {playing ? <IconPause size={14} /> : <IconPlay size={14} />}
         </button>
         <div className="time">{fmt(playhead)} / {fmt(totalDuration)}</div>
         <input
