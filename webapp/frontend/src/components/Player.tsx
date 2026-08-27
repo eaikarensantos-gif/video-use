@@ -102,6 +102,24 @@ export default function Player() {
     };
   }, [playing]);
 
+  // CSS approximation of the ffmpeg transform chain (Hard scope: the live
+  // preview is a fast approximation, helpers/render.py is the source of
+  // truth). Function order mirrors the backend's flip → rotate → zoom/pan:
+  // rightmost (innermost) is applied first, so flip sits rightmost, the
+  // zoom/pan scale sits leftmost (outermost, applied last).
+  const tf = activeClip?.transform;
+  const videoStyle: React.CSSProperties | undefined = tf
+    ? {
+        opacity: tf.opacity ?? 1,
+        transform: [
+          `scale(${tf.scale ?? 1})`,
+          `translate(${-(tf.x ?? 0) * 100}%, ${-(tf.y ?? 0) * 100}%)`,
+          `rotate(${tf.rotation ?? 0}deg)`,
+          `scale(${tf.flip_h ? -1 : 1}, ${tf.flip_v ? -1 : 1})`,
+        ].join(" "),
+      }
+    : undefined;
+
   const textTrack = timeline?.tracks.find((t) => t.type === "text");
   const activeTexts = ((textTrack?.clips ?? []) as TextClip[]).filter(
     (c) => playhead >= c.start && playhead < c.start + c.duration
@@ -115,7 +133,7 @@ export default function Player() {
     <div className="player-panel">
       <div className="player-frame">
         {activeClip ? (
-          <video ref={videoRef} playsInline muted={false} />
+          <video ref={videoRef} playsInline muted={false} style={videoStyle} />
         ) : (
           <div className="no-clip">
             Drag a clip from Media onto the video track to start editing.

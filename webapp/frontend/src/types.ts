@@ -1,5 +1,15 @@
 export type Transition = { type: string; duration?: number } | null | undefined;
 
+export interface ClipTransform {
+  scale?: number;
+  x?: number;
+  y?: number;
+  rotation?: number;
+  opacity?: number;
+  flip_h?: boolean;
+  flip_v?: boolean;
+}
+
 export interface VideoClip {
   id: string;
   source: string;
@@ -10,6 +20,7 @@ export interface VideoClip {
   transitionOut?: Transition;
   speed?: number;
   zoom?: { type: "in" | "out"; amount?: number } | null;
+  transform?: ClipTransform;
 }
 
 export interface TextClip {

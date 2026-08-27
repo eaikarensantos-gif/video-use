@@ -146,6 +146,26 @@ export function IconCheck({ size = 16 }: IconProps) {
   );
 }
 
+export function IconFlipH({ size = 16 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M12 3v18" strokeDasharray="2 2" />
+      <path d="M17 8l3 4-3 4" />
+      <path d="M7 8l-3 4 3 4" />
+    </svg>
+  );
+}
+
+export function IconFlipV({ size = 16 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M3 12h18" strokeDasharray="2 2" />
+      <path d="M8 17l4 3 4-3" />
+      <path d="M8 7l4-3 4 3" />
+    </svg>
+  );
+}
+
 export function IconPlus({ size = 16 }: IconProps) {
   return (
     <svg {...base(size)}>

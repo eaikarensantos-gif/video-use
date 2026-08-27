@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api } from "./api";
-import type { AudioClip, AudioItem, AutoEditRange, MediaItem, OverlayClip, Sticker, TextClip, Timeline, Track, VideoClip } from "./types";
+import type { AudioClip, AudioItem, AutoEditRange, ClipTransform, MediaItem, OverlayClip, Sticker, TextClip, Timeline, Track, VideoClip } from "./types";
 import { totalVideoDuration } from "./layout";
 
 let idCounter = 0;
@@ -46,6 +46,7 @@ interface EditorState {
 
   appendVideoClip: (source: string, inPoint: number, outPoint: number) => void;
   updateVideoClip: (clipId: string, patch: Partial<VideoClip>) => void;
+  updateVideoTransform: (clipId: string, patch: Partial<ClipTransform>) => void;
   removeClip: (trackId: string, clipId: string) => void;
   splitVideoClipAt: (time: number) => void;
   moveVideoClip: (clipId: string, toIndex: number) => void;
@@ -161,6 +162,16 @@ export const useEditor = create<EditorState>((set, get) => ({
       if (!track) return tl;
       const clip = track.clips.find((c) => c.id === clipId) as VideoClip | undefined;
       if (clip) Object.assign(clip, patch);
+      return tl;
+    });
+  },
+
+  updateVideoTransform: (clipId, patch) => {
+    withHistory(get, set, (tl) => {
+      const track = tl.tracks.find((t) => t.type === "video");
+      if (!track) return tl;
+      const clip = track.clips.find((c) => c.id === clipId) as VideoClip | undefined;
+      if (clip) clip.transform = { ...clip.transform, ...patch };
       return tl;
     });
   },

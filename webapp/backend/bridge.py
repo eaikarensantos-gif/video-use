@@ -33,6 +33,21 @@ def _resolve_audio_file(file: str, videos_dir: Path | None) -> str:
     return file
 
 
+def _is_nondefault_transform(t: dict) -> bool:
+    """Skip writing a transform block to the EDL when every field is still
+    at its identity default — keeps existing chat-authored EDLs untouched
+    for clips the user never opened the Transform panel on."""
+    return bool(
+        (t.get("scale") not in (None, 1) and t.get("scale") != 1.0)
+        or (t.get("x") not in (None, 0) and t.get("x") != 0.0)
+        or (t.get("y") not in (None, 0) and t.get("y") != 0.0)
+        or (t.get("rotation") not in (None, 0) and t.get("rotation") != 0.0)
+        or (t.get("opacity") not in (None, 1) and t.get("opacity") != 1.0)
+        or t.get("flip_h")
+        or t.get("flip_v")
+    )
+
+
 def _audio_file_to_url(file: str, videos_dir: Path | None) -> str:
     """Reverse of `_resolve_audio_file`, for opening a chat-authored EDL."""
     if videos_dir:
@@ -66,6 +81,8 @@ def timeline_to_edl(timeline: dict, videos_dir: Path | None = None) -> dict:
                 entry["speed"] = float(c["speed"])
             if c.get("zoom") and c["zoom"].get("type") in ("in", "out"):
                 entry["zoom"] = {"type": c["zoom"]["type"], "amount": float(c["zoom"].get("amount", 0.15))}
+            if c.get("transform") and _is_nondefault_transform(c["transform"]):
+                entry["transform"] = c["transform"]
             ranges.append(entry)
             if i < len(clips) - 1:
                 transitions.append(c.get("transitionOut") or {"type": "cut"})
@@ -153,6 +170,8 @@ def edl_to_timeline(edl: dict, media_info: dict[str, dict], videos_dir: Path | N
         }
         if r.get("zoom") and r["zoom"].get("type") in ("in", "out"):
             clip["zoom"] = {"type": r["zoom"]["type"], "amount": float(r["zoom"].get("amount", 0.15))}
+        if r.get("transform"):
+            clip["transform"] = r["transform"]
         if i < len(transitions):
             clip["transitionOut"] = transitions[i]
         clips.append(clip)

@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { useEditor } from "../store";
 import { api } from "../api";
 import type { AudioClip, GradePreset, OverlayClip, TextClip, VideoClip } from "../types";
+import { IconFlipH, IconFlipV } from "../icons";
 
 export default function Inspector() {
   const timeline = useEditor((s) => s.timeline);
   const selection = useEditor((s) => s.selection);
   const updateVideoClip = useEditor((s) => s.updateVideoClip);
+  const updateVideoTransform = useEditor((s) => s.updateVideoTransform);
   const updateTextClip = useEditor((s) => s.updateTextClip);
   const updateOverlayClip = useEditor((s) => s.updateOverlayClip);
   const updateAudioClip = useEditor((s) => s.updateAudioClip);
@@ -132,7 +134,70 @@ export default function Inspector() {
             />
           </div>
         )}
+        <div className="field-row" style={{ alignItems: "center", justifyContent: "space-between" }}>
+          <label style={{ margin: 0 }}>Transform</label>
+          <button
+            className="ghost"
+            style={{ fontSize: 10, padding: "3px 6px" }}
+            onClick={() => updateVideoClip(c.id, { transform: undefined })}
+          >
+            Reset
+          </button>
+        </div>
         <div className="field">
+          <label>Scale ({Math.round((c.transform?.scale ?? 1) * 100)}%)</label>
+          <input
+            type="range" min={0.1} max={3} step={0.01} value={c.transform?.scale ?? 1}
+            onChange={(e) => updateVideoTransform(c.id, { scale: Number(e.target.value) })}
+          />
+        </div>
+        <div className="field-row">
+          <div className="field">
+            <label>X ({Math.round((c.transform?.x ?? 0) * 100)}%)</label>
+            <input
+              type="range" min={-0.5} max={0.5} step={0.01} value={c.transform?.x ?? 0}
+              onChange={(e) => updateVideoTransform(c.id, { x: Number(e.target.value) })}
+            />
+          </div>
+          <div className="field">
+            <label>Y ({Math.round((c.transform?.y ?? 0) * 100)}%)</label>
+            <input
+              type="range" min={-0.5} max={0.5} step={0.01} value={c.transform?.y ?? 0}
+              onChange={(e) => updateVideoTransform(c.id, { y: Number(e.target.value) })}
+            />
+          </div>
+        </div>
+        <div className="field">
+          <label>Rotation ({Math.round(c.transform?.rotation ?? 0)}°)</label>
+          <input
+            type="range" min={-180} max={180} step={1} value={c.transform?.rotation ?? 0}
+            onChange={(e) => updateVideoTransform(c.id, { rotation: Number(e.target.value) })}
+          />
+        </div>
+        <div className="field">
+          <label>Opacity ({Math.round((c.transform?.opacity ?? 1) * 100)}%)</label>
+          <input
+            type="range" min={0} max={1} step={0.01} value={c.transform?.opacity ?? 1}
+            onChange={(e) => updateVideoTransform(c.id, { opacity: Number(e.target.value) })}
+          />
+        </div>
+        <div className="field-row">
+          <button
+            className={c.transform?.flip_h ? "primary" : "ghost"}
+            style={{ flex: 1 }}
+            onClick={() => updateVideoTransform(c.id, { flip_h: !c.transform?.flip_h })}
+          >
+            <IconFlipH size={13} /> Flip H
+          </button>
+          <button
+            className={c.transform?.flip_v ? "primary" : "ghost"}
+            style={{ flex: 1 }}
+            onClick={() => updateVideoTransform(c.id, { flip_v: !c.transform?.flip_v })}
+          >
+            <IconFlipV size={13} /> Flip V
+          </button>
+        </div>
+        <div className="field" style={{ marginTop: 12 }}>
           <label>Note / beat</label>
           <input type="text" value={c.note ?? ""} onChange={(e) => updateVideoClip(c.id, { note: e.target.value })} />
         </div>

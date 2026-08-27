@@ -194,6 +194,65 @@ def build_zoompan_filter(zoom_cfg: dict, duration: float, width: int, height: in
     return f"zoompan=z='{z_expr}':x='{x_expr}':y='{y_expr}':d=1:s={width}x{height}:fps={fps}"
 
 
+# -------- Per-clip transform (scale/rotate/position/opacity/flip) -----------
+
+
+def build_transform_filter(transform: dict) -> str:
+    """Build the -vf chain for a clip's manual transform, operating on the
+    frame at whatever size it already is (iw×ih) and leaving it that same
+    size afterward — so it can be inserted into the existing per-segment
+    chain without disturbing concat's fixed-frame-size assumption.
+
+    `transform`: {"scale": 1.0, "rotation": 0, "x": 0.0, "y": 0.0,
+                  "opacity": 1.0, "flip_h": false, "flip_v": false}
+    - scale: 1.0 = no zoom. >1 crops in (digital zoom); <1 shrinks with
+      black bars (letterbox), both centered then offset by x/y.
+    - x/y: recenter offset as a fraction of frame width/height (0.1 = shift
+      10% right/down). Only meaningful together with scale != 1, since at
+      scale=1 the frame already fills the canvas with nothing to pan into.
+    - rotation: degrees, clockwise. Frame size is preserved (rotate=...
+      ow=iw:oh=ih), exposed corners filled black.
+    - opacity: 1.0 = fully opaque. Since the video track is a single
+      sequential layer (nothing beneath a clip to blend with), this is
+      approximated as a dissolve toward black rather than true alpha.
+    """
+    parts: list[str] = []
+    scale = float(transform.get("scale", 1.0)) or 1.0
+    x = float(transform.get("x", 0.0))
+    y = float(transform.get("y", 0.0))
+    rotation = float(transform.get("rotation", 0.0))
+    opacity = float(transform.get("opacity", 1.0))
+    flip_h = bool(transform.get("flip_h"))
+    flip_v = bool(transform.get("flip_v"))
+
+    if flip_h:
+        parts.append("hflip")
+    if flip_v:
+        parts.append("vflip")
+    if rotation:
+        parts.append(f"rotate={rotation:.4f}*PI/180:ow=iw:oh=ih:c=black")
+    if abs(scale - 1.0) > 1e-6 or x or y:
+        scale = max(0.1, scale)
+        parts.append(f"scale=iw*{scale:.4f}:ih*{scale:.4f}")
+        if scale >= 1.0:
+            parts.append(
+                f"crop=iw/{scale:.4f}:ih/{scale:.4f}:"
+                f"(iw-iw/{scale:.4f})/2-({x:.4f})*iw/{scale:.4f}:"
+                f"(ih-ih/{scale:.4f})/2-({y:.4f})*ih/{scale:.4f}"
+            )
+        else:
+            parts.append(
+                f"pad=iw/{scale:.4f}:ih/{scale:.4f}:"
+                f"(ow-iw)/2+({x:.4f})*iw/{scale:.4f}:"
+                f"(oh-ih)/2+({y:.4f})*ih/{scale:.4f}:color=black"
+            )
+    if abs(opacity - 1.0) > 1e-6:
+        opacity = max(0.0, min(1.0, opacity))
+        parts.append(f"colorchannelmixer=rr={opacity:.4f}:gg={opacity:.4f}:bb={opacity:.4f}")
+
+    return ",".join(parts)
+
+
 # -------- Per-segment extraction (Rule 2 + Rule 3) --------------------------
 
 
@@ -224,6 +283,7 @@ def extract_segment(
     draft: bool = False,
     speed: float = 1.0,
     zoom: dict | None = None,
+    transform: dict | None = None,
 ) -> None:
     """Extract a cut range as its own MP4 with grade + 30ms audio fades baked in.
 
@@ -250,6 +310,10 @@ def extract_segment(
         native_w, native_h = probe_dimensions(source)
         vf_parts.append(build_zoompan_filter(zoom, duration, native_w, native_h))
     vf_parts.append(scale)
+    if transform:
+        transform_filter = build_transform_filter(transform)
+        if transform_filter:
+            vf_parts.append(transform_filter)
     if grade_filter:
         vf_parts.append(grade_filter)
     if speed != 1.0:
@@ -340,13 +404,18 @@ def extract_all_segments(
 
         speed = float(r.get("speed", 1.0)) or 1.0
         zoom = r.get("zoom")
+        transform = r.get("transform")
         note = r.get("beat") or r.get("note") or ""
         speed_note = f"  speed={speed:g}x" if speed != 1.0 else ""
         zoom_note = f"  zoom={zoom['type']}" if zoom and zoom.get("type") in ("in", "out") else ""
-        print(f"  [{i:02d}] {src_name}  {start:7.2f}-{end:7.2f}  ({duration:5.2f}s)  {note}{speed_note}{zoom_note}")
+        transform_note = "  transform" if transform else ""
+        print(f"  [{i:02d}] {src_name}  {start:7.2f}-{end:7.2f}  ({duration:5.2f}s)  {note}{speed_note}{zoom_note}{transform_note}")
         if is_auto:
             print(f"        grade: {seg_filter or '(none)'}")
-        extract_segment(src_path, start, duration, seg_filter, out_path, preview=preview, draft=draft, speed=speed, zoom=zoom)
+        extract_segment(
+            src_path, start, duration, seg_filter, out_path,
+            preview=preview, draft=draft, speed=speed, zoom=zoom, transform=transform,
+        )
         seg_paths.append(out_path)
 
     return seg_paths

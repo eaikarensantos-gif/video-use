@@ -83,7 +83,7 @@ cd webapp/frontend && npm run dev   # http://localhost:5173, proxies /api and /m
 - **Player** (center top) — space to play/pause, scrub the transport bar or the timeline ruler. Reflects per-clip speed (`playbackRate`) and shows the active sticker/text overlay live.
 - **Timeline** (bottom) — drag clip edges to trim, drag a clip to reorder, `S` to split at the playhead, `Delete` to remove the selected clip, `+ Text at playhead` to drop a title card. The Audio track's clips trim/move the same way, adjusting `trimIn` on the left edge.
 - **Inspector** (right), per clip type:
-  - **Video** — grade preset (10 presets, see `helpers/grade.py`), transition-out type/duration, **speed** (0.25x–4x), **Ken Burns zoom/pan** (in/out, adjustable amount).
+  - **Video** — grade preset (10 presets, see `helpers/grade.py`), transition-out type/duration, **speed** (0.25x–4x), **Ken Burns zoom/pan** (in/out, adjustable amount), and a **Transform** panel (scale, X/Y position, rotation, opacity, flip H/V) — a static per-clip transform, not keyframed over time; live-previewed in the player via CSS and rendered for real via ffmpeg `crop`/`pad`/`rotate`/`colorchannelmixer`.
   - **Text** — content, position, font size/color, background chip, **animation** (fade or slide-up entrance).
   - **Sticker** — position (x/y) and size, as fractions of the frame.
   - **Audio** — start/duration, volume, fade in/out.
