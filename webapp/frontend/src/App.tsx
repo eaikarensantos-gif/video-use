@@ -25,6 +25,16 @@ export default function App() {
   const [aiEditOpen, setAiEditOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
 
+  const media = useEditor((s) => s.media);
+  const totalDuration = useEditor((s) => s.totalDuration());
+  const clipCount = timeline?.tracks.reduce((total, track) => total + track.clips.length, 0) ?? 0;
+
+  function formatDuration(seconds: number) {
+    const minutes = Math.floor(seconds / 60);
+    const remainder = Math.floor(seconds % 60);
+    return `${minutes}:${remainder.toString().padStart(2, "0")}`;
+  }
+
   useEffect(() => {
     load();
     const timer = window.setTimeout(() => {
@@ -74,6 +84,15 @@ export default function App() {
       <Player />
       <Inspector />
       <Timeline />
+      <footer className="workspace-statusbar">
+        <div className="statusbar-ready"><span className="status-dot" /> Ready</div>
+        <div>{media.length} media file{media.length === 1 ? "" : "s"}</div>
+        <div>{clipCount} clip{clipCount === 1 ? "" : "s"}</div>
+        <div>{formatDuration(totalDuration)} total</div>
+        <div className="statusbar-spacer" />
+        <div>{selection ? "Clip selected" : "No selection"}</div>
+        <div className="shortcut-hint"><kbd>Space</kbd> Play <kbd>S</kbd> Split <kbd>Del</kbd> Delete</div>
+      </footer>
       {exportOpen && <ExportModal onClose={() => setExportOpen(false)} />}
       {aiEditOpen && <AiEditorModal onClose={() => setAiEditOpen(false)} />}
       {updateInfo && <UpdateModal info={updateInfo} onClose={() => setUpdateInfo(null)} />}

@@ -31,22 +31,27 @@ export default function Toolbar({ onExport, onAiEdit }: { onExport: () => void; 
   return (
     <div className="toolbar">
       <div className="brand">
-        <IconLogo size={22} />
-        <div className="title">video-use</div>
+        <IconLogo size={28} />
+        <div className="brand-copy">
+          <div className="title">Video Use</div>
+          <div className="project-name">Untitled project</div>
+        </div>
       </div>
       <div className="divider" />
-      <button className="ghost" disabled={!history.length} onClick={undo} title="Undo">
-        <IconUndo size={14} /> Undo
-      </button>
-      <button className="ghost" disabled={!future.length} onClick={redo} title="Redo">
-        <IconRedo size={14} /> Redo
-      </button>
-      <button className="ghost" onClick={() => splitVideoClipAt(playhead)} title="Split at playhead (S)">
-        <IconScissors size={14} /> Split
-      </button>
+      <div className="toolbar-group edit-actions">
+        <button className="ghost icon-action" disabled={!history.length} onClick={undo} title="Undo">
+          <IconUndo size={15} /><span>Undo</span>
+        </button>
+        <button className="ghost icon-action" disabled={!future.length} onClick={redo} title="Redo">
+          <IconRedo size={15} /><span>Redo</span>
+        </button>
+        <button className="ghost icon-action" onClick={() => splitVideoClipAt(playhead)} title="Split at playhead (S)">
+          <IconScissors size={15} /><span>Split</span>
+        </button>
+      </div>
       <div className="spacer" />
-      <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-1)", fontSize: 11 }}>
-        Aspect ratio
+      <label className="toolbar-control">
+        <span>Canvas</span>
         <select
           value={aspectIndex === -1 ? 0 : aspectIndex}
           onChange={(e) => {
@@ -60,8 +65,8 @@ export default function Toolbar({ onExport, onAiEdit }: { onExport: () => void; 
           ))}
         </select>
       </label>
-      <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-1)", fontSize: 11 }}>
-        Zoom
+      <label className="toolbar-control zoom-control">
+        <span>Zoom</span>
         <input
           type="range"
           min={20}
@@ -70,11 +75,11 @@ export default function Toolbar({ onExport, onAiEdit }: { onExport: () => void; 
           onChange={(e) => setZoom(Number(e.target.value))}
         />
       </label>
-      <div className="status">{statusText}</div>
-      <button className="ghost" onClick={onAiEdit} title="Propose a cut with the real AI editor, review, then apply">
-        <IconSparkle size={14} /> AI Edit
+      <div className={`status ${dirty ? "is-dirty" : ""}`}><span className="status-dot" />{statusText}</div>
+      <button className="ai-action" onClick={onAiEdit} title="Propose a cut with the real AI editor, review, then apply">
+        <IconSparkle size={15} /> AI Studio <span className="beta-badge">BETA</span>
       </button>
-      <button className="primary" onClick={onExport}>
+      <button className="primary export-action" onClick={onExport}>
         <IconExport size={14} /> Export
       </button>
     </div>

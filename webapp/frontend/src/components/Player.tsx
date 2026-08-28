@@ -140,6 +140,10 @@ export default function Player() {
 
   return (
     <div className="player-panel">
+      <div className="viewer-header">
+        <span>Program monitor</span>
+        <span className="viewer-quality">Preview · Auto</span>
+      </div>
       <div
         className="player-frame"
         style={hasFixedAspect ? { aspectRatio: `${canvas!.width} / ${canvas!.height}`, width: "auto", height: "100%" } : undefined}
@@ -191,7 +195,7 @@ export default function Player() {
         <button className="ghost" onClick={() => setPlayhead(0)} title="Jump to start">
           <IconSkipBack size={14} />
         </button>
-        <button onClick={() => setPlaying(!playing)} title="Play/Pause (space)">
+        <button className="play-button" onClick={() => setPlaying(!playing)} title="Play/Pause (space)">
           {playing ? <IconPause size={14} /> : <IconPlay size={14} />}
         </button>
         <div className="time">{fmt(playhead)} / {fmt(totalDuration)}</div>
