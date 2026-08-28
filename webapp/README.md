@@ -22,7 +22,20 @@ directory and the same `edl.json` the skill's helpers already use:
   cuts, grades, and overlays — and saving from the UI keeps `edl.json` in a
   shape the chat flow can keep editing.
 
-## Quick start
+## Quick start (Windows, no terminal after setup)
+
+From the repo root, in File Explorer:
+
+1. Double-click **`Video-Use-Setup.bat`** once — installs everything and
+   builds the frontend. Leave the window open until it says "Pronto!".
+2. From then on, double-click **`Video-Use.vbs`** to open the editor — it
+   starts the backend hidden (no console window) and opens your browser to
+   it automatically. Your footage goes in `%USERPROFILE%\Videos\video-use`
+   (created for you the first time).
+3. To close it, double-click **`Video-Use-Stop.vbs`**, or just leave it
+   running in the background.
+
+## Quick start (manual / macOS / Linux)
 
 From the repo root:
 
@@ -42,6 +55,11 @@ python webapp/backend/main.py --videos-dir /path/to/your/videos --port 8756
 
 Open `http://127.0.0.1:8756`. Drop more footage into the folder and refresh —
 it shows up in the media bin, same as the chat flow.
+
+After a `git pull` that changes the frontend, rebuild it once
+(`npm run build` in `webapp/frontend`, or just re-run `Video-Use-Setup.bat`
+on Windows) before the new UI shows up — the backend serves whatever was
+last built, not the source files directly.
 
 ### AI features (optional)
 
