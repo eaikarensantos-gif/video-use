@@ -110,6 +110,23 @@ def message_box(text: str, title: str = "video-use") -> None:
     ctypes.windll.user32.MessageBoxW(None, text, title, MB_OK | MB_ICONINFORMATION)
 
 
+def crash_log_path() -> Path:
+    # sys.executable is the real video-use.exe path when frozen (its
+    # install dir, under %LOCALAPPDATA%, is always user-writable) — this
+    # is the only place a windowed (console=False) build can surface an
+    # exception, since stdout/stderr go nowhere for it.
+    exe_dir = Path(sys.executable).resolve().parent
+    return exe_dir / "video-use-crash.log"
+
+
+def _run_server(server: "uvicorn.Server") -> None:
+    try:
+        server.run()
+    except Exception:
+        import traceback
+        crash_log_path().write_text("server thread crashed:\n" + traceback.format_exc())
+
+
 def main() -> None:
     root = bundle_root()
     put_ffmpeg_on_path(root)
@@ -121,7 +138,7 @@ def main() -> None:
     app = create_app(videos_dir)
     config = uvicorn.Config(app, host=HOST, port=PORT, log_level="warning")
     server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
+    thread = threading.Thread(target=_run_server, args=(server,), daemon=True)
     thread.start()
 
     url = f"http://{HOST}:{PORT}"
@@ -172,4 +189,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        import traceback
+        crash_log_path().write_text("main() crashed:\n" + traceback.format_exc())
+        raise

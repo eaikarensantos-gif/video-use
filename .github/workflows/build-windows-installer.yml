@@ -79,7 +79,17 @@ jobs:
                 Start-Sleep -Seconds 1
               }
             }
-            if (-not $healthy) { throw "server never answered /api/health" }
+            if (-not $healthy) {
+              $crashLog = "dist\video-use\video-use-crash.log"
+              if (Test-Path $crashLog) {
+                Write-Host "----- video-use-crash.log -----"
+                Get-Content $crashLog | Write-Host
+                Write-Host "--------------------------------"
+              } else {
+                Write-Host "(no video-use-crash.log was written)"
+              }
+              throw "server never answered /api/health"
+            }
           } finally {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
           }
