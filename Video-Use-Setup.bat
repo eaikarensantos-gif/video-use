@@ -60,15 +60,33 @@ if errorlevel 1 (
 cd /d "%~dp0"
 
 echo.
-echo [4/4] Preparando a pasta de videos...
+echo [4/5] Preparando a pasta de videos...
 if not exist "%USERPROFILE%\Videos\video-use" mkdir "%USERPROFILE%\Videos\video-use"
+
+echo.
+echo [5/5] Criando atalho na Area de Trabalho e no Menu Iniciar...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$ws = New-Object -ComObject WScript.Shell;" ^
+    "foreach ($dir in @([Environment]::GetFolderPath('Desktop'), (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'))) {" ^
+    "  $s = $ws.CreateShortcut((Join-Path $dir 'video-use.lnk'));" ^
+    "  $s.TargetPath = '%~dp0Video-Use.vbs';" ^
+    "  $s.WorkingDirectory = '%~dp0';" ^
+    "  $s.IconLocation = '%~dp0Video-Use.ico';" ^
+    "  $s.Description = 'Editor de video video-use';" ^
+    "  $s.Save();" ^
+    "}"
+if errorlevel 1 (
+    echo   [aviso] Nao consegui criar o atalho automaticamente - sem problema,
+    echo   continua dando duplo-clique em "Video-Use.vbs" normalmente.
+)
 
 echo.
 echo ================================================
 echo   Pronto! Pode fechar esta janela.
 echo.
 echo   De agora em diante, para abrir o editor:
-echo     -^> so dar duplo-clique em "Video-Use.vbs"
+echo     -^> procura "video-use" no Menu Iniciar, ou usa o atalho
+echo        que apareceu na sua Area de Trabalho
 echo.
 echo   Seus videos ficam em:
 echo     %USERPROFILE%\Videos\video-use

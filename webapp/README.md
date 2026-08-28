@@ -22,18 +22,26 @@ directory and the same `edl.json` the skill's helpers already use:
   cuts, grades, and overlays — and saving from the UI keeps `edl.json` in a
   shape the chat flow can keep editing.
 
-## Quick start (Windows, no terminal after setup)
+## Quick start (Windows, installed like an app)
 
 From the repo root, in File Explorer:
 
-1. Double-click **`Video-Use-Setup.bat`** once — installs everything and
-   builds the frontend. Leave the window open until it says "Pronto!".
-2. From then on, double-click **`Video-Use.vbs`** to open the editor — it
-   starts the backend hidden (no console window) and opens your browser to
-   it automatically. Your footage goes in `%USERPROFILE%\Videos\video-use`
+1. Double-click **`Video-Use-Setup.bat`** once — installs everything,
+   builds the frontend, and adds a **video-use** shortcut (with its own
+   icon) to your Desktop and Start Menu. Leave the window open until it
+   says "Pronto!".
+2. From then on, open it the same way as any other app — the Desktop icon,
+   or search "video-use" in the Start Menu. It starts the backend hidden
+   (no console window) and opens in its own app window (no browser address
+   bar/tabs, via Edge's app mode — falls back to your default browser if
+   Edge isn't found). Your footage goes in `%USERPROFILE%\Videos\video-use`
    (created for you the first time).
-3. To close it, double-click **`Video-Use-Stop.vbs`**, or just leave it
-   running in the background.
+3. To close it, close the app window, or double-click **`Video-Use-Stop.vbs`**
+   if you want to make sure the background server stops too.
+
+Already ran Setup before and just want the Desktop/Start Menu shortcut? Run
+`Video-Use-Setup.bat` again — it's safe to re-run any time (it skips
+straight through the already-installed steps) and only takes a few seconds.
 
 ## Quick start (manual / macOS / Linux)
 

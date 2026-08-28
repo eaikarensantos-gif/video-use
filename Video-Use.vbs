@@ -69,7 +69,25 @@ For i = 1 To maxWaitSeconds * 2
 Next
 
 If started Then
-    shell.Run "http://127.0.0.1:8756"
+    ' Open in Edge's "app mode" (no address bar/tabs) so it looks and feels
+    ' like a real installed app rather than a browser tab. Falls back to
+    ' the default browser if Edge isn't found at either usual install path.
+    edgePaths = Array( _
+        shell.ExpandEnvironmentStrings("%ProgramFiles(x86)%") & "\Microsoft\Edge\Application\msedge.exe", _
+        shell.ExpandEnvironmentStrings("%ProgramFiles%") & "\Microsoft\Edge\Application\msedge.exe")
+    edgePath = ""
+    For Each p In edgePaths
+        If fso.FileExists(p) Then
+            edgePath = p
+            Exit For
+        End If
+    Next
+
+    If edgePath <> "" Then
+        shell.Run """" & edgePath & """ --app=http://127.0.0.1:8756 --window-size=1440,900", 1, False
+    Else
+        shell.Run "http://127.0.0.1:8756"
+    End If
 Else
     MsgBox "O video-use esta demorando mais que o esperado pra iniciar." & vbCrLf & _
            "Abra manualmente no navegador: http://127.0.0.1:8756" & vbCrLf & vbCrLf & _
