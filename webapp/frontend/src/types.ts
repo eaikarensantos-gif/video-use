@@ -135,6 +135,18 @@ export interface AutoEditRange {
   reason: string;
 }
 
+export interface CleanupSpan {
+  start: number;
+  end: number;
+  kind: "silence" | "filler";
+  label: string;
+}
+
+export interface CleanupResult {
+  spans: CleanupSpan[];
+  keep_ranges: { in: number; out: number }[];
+}
+
 export interface JobStatus<T = any> {
   status: "queued" | "running" | "done" | "error";
   log: string[];

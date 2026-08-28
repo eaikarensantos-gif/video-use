@@ -170,6 +170,28 @@ def create_app(videos_dir: Path) -> FastAPI:
         job_id = start_thread_job(work)
         return {"job_id": job_id}
 
+    # ---- Cleanup (silence/filler-word detection from the transcript) ----
+
+    @app.post("/api/media/{name}/detect-cleanup")
+    def detect_cleanup(
+        name: str,
+        clip_in: float = Body(..., embed=True),
+        clip_out: float = Body(..., embed=True),
+        silence_threshold: float = Body(0.6, embed=True),
+    ):
+        from cleanup import detect_cleanup_spans, spans_to_keep_ranges
+
+        tr_path = project.edit_dir / "transcripts" / f"{name}.json"
+        if not tr_path.exists():
+            raise HTTPException(404, f"no transcript for '{name}' — transcribe it first")
+        spans = detect_cleanup_spans(tr_path, silence_threshold=silence_threshold)
+        in_range = [s for s in spans if s["start"] < clip_out and s["end"] > clip_in]
+        keep = spans_to_keep_ranges(clip_in, clip_out, in_range)
+        return {
+            "spans": in_range,
+            "keep_ranges": [{"in": a, "out": b} for a, b in keep],
+        }
+
     # ---- AI auto-edit (real Anthropic API call, proposes cuts for review) --
 
     @app.post("/api/ai/auto-edit")

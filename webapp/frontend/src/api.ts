@@ -1,4 +1,4 @@
-import type { AudioItem, ExportStatus, GradePreset, JobStatus, MediaItem, Sticker, Timeline } from "./types";
+import type { AudioItem, CleanupResult, ExportStatus, GradePreset, JobStatus, MediaItem, Sticker, Timeline } from "./types";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -52,4 +52,10 @@ export const api = {
       body: JSON.stringify({ brief, target_duration: targetDuration ?? null }),
     }).then((r) => json<{ job_id: string }>(r)),
   jobStatus: <T = any>(jobId: string) => fetch(`/api/jobs/${jobId}`).then((r) => json<JobStatus<T>>(r)),
+  detectCleanup: (name: string, clipIn: number, clipOut: number, silenceThreshold = 0.6) =>
+    fetch(`/api/media/${encodeURIComponent(name)}/detect-cleanup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clip_in: clipIn, clip_out: clipOut, silence_threshold: silenceThreshold }),
+    }).then((r) => json<CleanupResult>(r)),
 };

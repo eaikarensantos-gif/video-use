@@ -84,6 +84,13 @@ ANTHROPIC_API_KEY=...    # for AI auto-edit
   (source, in/out, a short label, and why); you review, uncheck anything you
   don't want, and only then click **Apply** to write them to the video track.
   Nothing is ever applied automatically.
+- **Cleanup / silence + filler-word removal** (Inspector, selected video
+  clip → **✂ Limpar**) — no LLM call, purely from the transcript's word
+  timestamps: flags silences above a threshold you set and unambiguous
+  filler interjections ("um", "uh", "erm"...). Deliberately conservative —
+  context-dependent words like "like"/"so"/"actually" are never auto-removed
+  since they're too often not filler. Review the list, then **Aplicar**
+  splits that one clip into the surviving sub-ranges in place.
 
 ## Frontend dev mode (hot reload)
 

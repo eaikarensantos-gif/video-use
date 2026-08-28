@@ -47,6 +47,7 @@ interface EditorState {
   appendVideoClip: (source: string, inPoint: number, outPoint: number) => void;
   updateVideoClip: (clipId: string, patch: Partial<VideoClip>) => void;
   updateVideoTransform: (clipId: string, patch: Partial<ClipTransform>) => void;
+  applyCleanup: (clipId: string, keepRanges: { in: number; out: number }[]) => void;
   removeClip: (trackId: string, clipId: string) => void;
   splitVideoClipAt: (time: number) => void;
   moveVideoClip: (clipId: string, toIndex: number) => void;
@@ -174,6 +175,26 @@ export const useEditor = create<EditorState>((set, get) => ({
       if (clip) clip.transform = { ...clip.transform, ...patch };
       return tl;
     });
+  },
+
+  applyCleanup: (clipId, keepRanges) => {
+    withHistory(get, set, (tl) => {
+      const track = tl.tracks.find((t) => t.type === "video");
+      if (!track) return tl;
+      const idx = track.clips.findIndex((c) => c.id === clipId);
+      if (idx === -1 || !keepRanges.length) return tl;
+      const original = track.clips[idx] as VideoClip;
+      const fragments: VideoClip[] = keepRanges.map((r, i) => ({
+        ...original,
+        id: newId("clip"),
+        in: r.in,
+        out: r.out,
+        transitionOut: i === keepRanges.length - 1 ? original.transitionOut : undefined,
+      }));
+      track.clips.splice(idx, 1, ...fragments);
+      return tl;
+    });
+    if (get().selection?.clipId === clipId) set({ selection: null });
   },
 
   removeClip: (trackId, clipId) => {
