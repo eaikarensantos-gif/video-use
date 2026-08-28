@@ -41,7 +41,7 @@ from mediainfo import (  # noqa: E402
     generate_waveform_peaks,
     probe_media,
 )
-from project import AUDIO_EXTS, VIDEO_EXTS, Project  # noqa: E402
+from project import AUDIO_EXTS, IMAGE_EXTS, VIDEO_EXTS, Project  # noqa: E402
 from version import APP_VERSION  # noqa: E402
 
 
@@ -154,8 +154,8 @@ def create_app(videos_dir: Path) -> FastAPI:
         # never trust a client-supplied path.
         safe_name = Path(file.filename or "upload").name
         ext = Path(safe_name).suffix.lower()
-        if ext not in VIDEO_EXTS and ext not in AUDIO_EXTS:
-            allowed = ", ".join(sorted(VIDEO_EXTS | AUDIO_EXTS))
+        if ext not in VIDEO_EXTS and ext not in AUDIO_EXTS and ext not in IMAGE_EXTS:
+            allowed = ", ".join(sorted(VIDEO_EXTS | AUDIO_EXTS | IMAGE_EXTS))
             raise HTTPException(400, f"unsupported file type '{ext}'. Allowed: {allowed}")
 
         dest = project.videos_dir / safe_name
@@ -171,14 +171,15 @@ def create_app(videos_dir: Path) -> FastAPI:
             while chunk := await file.read(1024 * 1024):
                 out.write(chunk)
 
-        return {"name": dest.stem, "filename": dest.name, "kind": "video" if ext in VIDEO_EXTS else "audio"}
+        kind = "video" if ext in VIDEO_EXTS else "audio" if ext in AUDIO_EXTS else "image"
+        return {"name": dest.stem, "filename": dest.name, "kind": kind}
 
     @app.delete("/api/media/{name}")
     def delete_media(name: str):
         src = project.find_source(name)
         if not src:
             raise HTTPException(404, f"unknown media '{name}'")
-        src.unlink()
+        trashed_path = project.trash_file(src)
 
         for thumb in (project.edit_dir / "thumbnails").glob(f"{name}_*.jpg"):
             thumb.unlink(missing_ok=True)
@@ -197,7 +198,7 @@ def create_app(videos_dir: Path) -> FastAPI:
             removed_clips += before - len(track["clips"])
         project.save_timeline(timeline)
 
-        return {"deleted": name, "removed_clips": removed_clips}
+        return {"deleted": name, "removed_clips": removed_clips, "recoverable_at": str(trashed_path)}
 
     @app.get("/api/media/{name}/thumbnail.jpg")
     def media_thumbnail(name: str, t: float = 0.0):
@@ -269,6 +270,30 @@ def create_app(videos_dir: Path) -> FastAPI:
         job_id = start_thread_job(work)
         return {"job_id": job_id}
 
+    @app.get("/api/media/{name}/transcript")
+    def get_transcript(name: str):
+        if not project.find_source(name):
+            raise HTTPException(404, f"unknown source '{name}'")
+        tr_path = project.edit_dir / "transcripts" / f"{name}.json"
+        if not tr_path.exists():
+            raise HTTPException(404, f"no transcript for '{name}' — transcribe it first")
+        try:
+            payload = json.loads(tr_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise HTTPException(500, f"invalid transcript for '{name}': {exc}") from exc
+        words = []
+        for index, word in enumerate(payload.get("words", [])):
+            if word.get("type", "word") != "word":
+                continue
+            start, end = word.get("start"), word.get("end")
+            if not isinstance(start, (int, float)) or not isinstance(end, (int, float)) or end <= start:
+                continue
+            words.append({
+                "id": f"w{index}", "text": str(word.get("text", "")).strip(),
+                "start": float(start), "end": float(end), "speaker": word.get("speaker_id"),
+            })
+        return {"source": name, "language": payload.get("language_code"), "text": payload.get("text", ""), "words": words}
+
     # ---- Cleanup (silence/filler-word detection from the transcript) ----
 
     @app.post("/api/media/{name}/detect-cleanup")
@@ -336,7 +361,7 @@ def create_app(videos_dir: Path) -> FastAPI:
         if not src:
             raise HTTPException(404, f"unknown audio file '{name}'")
         stream_suffix = f"/media/source/{src.name}"
-        src.unlink()
+        trashed_path = project.trash_file(src)
         (project.edit_dir / "waveforms" / f"audio_{name}.json").unlink(missing_ok=True)
 
         timeline = project.load_timeline()
@@ -349,7 +374,7 @@ def create_app(videos_dir: Path) -> FastAPI:
             removed_clips += before - len(track["clips"])
         project.save_timeline(timeline)
 
-        return {"deleted": name, "removed_clips": removed_clips}
+        return {"deleted": name, "removed_clips": removed_clips, "recoverable_at": str(trashed_path)}
 
     @app.get("/api/audio/{name}/waveform")
     def audio_waveform(name: str):
@@ -404,12 +429,12 @@ def create_app(videos_dir: Path) -> FastAPI:
 
     @app.get("/api/stickers")
     def list_stickers():
-        if not STICKERS_DIR.exists():
-            return []
-        return [
+        builtins = [
             {"name": p.stem, "url": f"/static/stickers/{p.name}"}
             for p in sorted(STICKERS_DIR.glob("*.png"))
-        ]
+        ] if STICKERS_DIR.exists() else []
+        imported = [{"name": p.stem, "url": f"/media/source/{p.name}"} for p in project.list_image_files()]
+        return imported + builtins
 
     # ---- Export ------------------------------------------------------------
 

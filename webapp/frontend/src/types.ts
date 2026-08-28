@@ -159,6 +159,21 @@ export interface CleanupResult {
   keep_ranges: { in: number; out: number }[];
 }
 
+export interface TranscriptWord {
+  id: string;
+  text: string;
+  start: number;
+  end: number;
+  speaker?: string | null;
+}
+
+export interface Transcript {
+  source: string;
+  language?: string | null;
+  text: string;
+  words: TranscriptWord[];
+}
+
 export interface JobStatus<T = any> {
   status: "queued" | "running" | "done" | "error";
   log: string[];

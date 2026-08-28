@@ -89,13 +89,30 @@ def parse_ranges(text: str) -> list[dict]:
         raise RuntimeError("model response was not a JSON array")
     ranges: list[dict] = []
     for item in data:
-        ranges.append({
-            "source": str(item["source"]),
-            "start": float(item["start"]),
-            "end": float(item["end"]),
-            "beat": str(item.get("beat", "")),
-            "reason": str(item.get("reason", "")),
-        })
+        if not isinstance(item, dict) or not {"source", "start", "end"} <= item.keys():
+            raise RuntimeError("each proposed cut must contain source, start, and end")
+        source = str(item["source"])
+        start, end = float(item["start"]), float(item["end"])
+        if not source or start < 0 or end <= start:
+            raise RuntimeError(f"invalid proposed cut: source={source!r}, start={start}, end={end}")
+        ranges.append({"source": source, "start": start, "end": end,
+                       "beat": str(item.get("beat", "")), "reason": str(item.get("reason", ""))})
+    return ranges
+
+
+def validate_ranges(ranges: list[dict], transcripts_dir: Path) -> list[dict]:
+    """Reject hallucinated sources and timestamps outside their transcripts."""
+    limits: dict[str, float] = {}
+    for path in transcripts_dir.glob("*.json"):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        ends = [float(w["end"]) for w in payload.get("words", []) if isinstance(w.get("end"), (int, float))]
+        limits[path.stem] = max(ends, default=0.0)
+    for item in ranges:
+        source = item["source"]
+        if source not in limits:
+            raise RuntimeError(f"model proposed unknown source {source!r}")
+        if item["end"] > limits[source] + 0.25:
+            raise RuntimeError(f"model proposed timestamp outside {source!r}: {item['end']:.2f}s > {limits[source]:.2f}s")
     return ranges
 
 
@@ -125,6 +142,6 @@ def run_auto_edit(
         raise RuntimeError("model returned no text output — check the API response for a refusal")
 
     log("parsing proposed cuts…")
-    ranges = parse_ranges(text)
+    ranges = validate_ranges(parse_ranges(text), edit_dir / "transcripts")
     log(f"got {len(ranges)} cut(s)")
     return ranges

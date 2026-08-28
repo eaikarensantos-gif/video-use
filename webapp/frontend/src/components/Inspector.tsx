@@ -4,6 +4,7 @@ import { api } from "../api";
 import type { AudioClip, GradePreset, OverlayClip, TextClip, VideoClip } from "../types";
 import { IconFlipH, IconFlipV } from "../icons";
 import CleanupModal from "./CleanupModal";
+import TranscriptModal from "./TranscriptModal";
 
 export default function Inspector() {
   const timeline = useEditor((s) => s.timeline);
@@ -18,6 +19,7 @@ export default function Inspector() {
   const [grades, setGrades] = useState<GradePreset[]>([]);
   const [transitions, setTransitions] = useState<string[]>([]);
   const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
 
   useEffect(() => {
     api.gradePresets().then(setGrades).catch(() => {});
@@ -69,6 +71,10 @@ export default function Inspector() {
           ✂ Limpar (silêncios / gaguejo)
         </button>
         {cleanupOpen && <CleanupModal clip={c} onClose={() => setCleanupOpen(false)} />}
+        <button className="ghost" style={{ width: "100%", marginBottom: 12 }} onClick={() => setTranscriptOpen(true)}>
+          Editar pela transcrição
+        </button>
+        {transcriptOpen && <TranscriptModal clip={c} onClose={() => setTranscriptOpen(false)} />}
         <div className="field">
           <label>Grade</label>
           <select value={c.grade ?? "none"} onChange={(e) => updateVideoClip(c.id, { grade: e.target.value })}>

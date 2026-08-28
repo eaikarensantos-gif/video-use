@@ -88,7 +88,7 @@ export default function MediaBin() {
   const { busy, errors, busyAll, allError, transcribeOne, transcribeAll } = useTranscribeJobs();
 
   async function handleDeleteMedia(name: string) {
-    if (!confirm(`Apagar "${name}"? O arquivo original também será removido da pasta de vídeos.`)) return;
+    if (!confirm(`Remover "${name}" do projeto? O original será movido para a lixeira recuperável do projeto.`)) return;
     setDeleting((d) => new Set(d).add(name));
     try {
       await deleteMediaItem(name);
@@ -98,7 +98,7 @@ export default function MediaBin() {
   }
 
   async function handleDeleteAudio(name: string) {
-    if (!confirm(`Apagar "${name}"? O arquivo original também será removido.`)) return;
+    if (!confirm(`Remover "${name}" do projeto? O original será movido para a lixeira recuperável do projeto.`)) return;
     setDeleting((d) => new Set(d).add(`audio:${name}`));
     try {
       await deleteAudioItem(name);
@@ -147,7 +147,7 @@ export default function MediaBin() {
         <input
           ref={fileInputRef}
           type="file"
-          accept="video/*,audio/*"
+          accept="video/*,audio/*,image/png,image/jpeg,image/webp"
           multiple
           style={{ display: "none" }}
           onChange={(e) => {
@@ -211,7 +211,7 @@ export default function MediaBin() {
 
       {stickers.length > 0 && (
         <>
-          <h3 style={{ marginTop: 18 }}>Stickers</h3>
+          <h3 style={{ marginTop: 18 }}>Imagens e stickers</h3>
           <div className="sticker-grid">
             {stickers.map((s) => (
               <img

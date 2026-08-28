@@ -1,4 +1,4 @@
-import type { AudioItem, CleanupResult, ExportStatus, GradePreset, JobStatus, MediaItem, Sticker, SubtitleStyle, Timeline, UpdateInfo } from "./types";
+import type { AudioItem, CleanupResult, ExportStatus, GradePreset, JobStatus, MediaItem, Sticker, SubtitleStyle, Timeline, Transcript, UpdateInfo } from "./types";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -44,7 +44,7 @@ export const api = {
     const body = new FormData();
     body.append("file", file);
     return fetch("/api/media/upload", { method: "POST", body }).then((r) =>
-      json<{ name: string; filename: string; kind: "video" | "audio" }>(r)
+      json<{ name: string; filename: string; kind: "video" | "audio" | "image" }>(r)
     );
   },
   startExport: (
@@ -72,6 +72,8 @@ export const api = {
     }).then((r) => json<{ job_id: string }>(r)),
   transcribeAll: () =>
     fetch("/api/media/transcribe-all", { method: "POST" }).then((r) => json<{ job_id: string }>(r)),
+  transcript: (name: string) =>
+    fetch(`/api/media/${encodeURIComponent(name)}/transcript`).then((r) => json<Transcript>(r)),
   autoEdit: (brief: string, targetDuration?: number) =>
     fetch("/api/ai/auto-edit", {
       method: "POST",

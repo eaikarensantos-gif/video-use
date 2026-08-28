@@ -104,8 +104,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   refreshLibraries: async () => {
-    const [media, audioFiles] = await Promise.all([api.media(), api.audioFiles()]);
-    set({ media, audioFiles });
+    const [media, audioFiles, stickers] = await Promise.all([api.media(), api.audioFiles(), api.stickers()]);
+    set({ media, audioFiles, stickers });
   },
 
   uploadFiles: async (files) => {

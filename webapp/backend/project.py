@@ -8,6 +8,7 @@ flow operate on the exact same files.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from bridge import edl_to_timeline, empty_timeline
@@ -15,6 +16,7 @@ from mediainfo import probe_media
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm"}
 AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 
 
 class Project:
@@ -61,6 +63,18 @@ class Project:
             if p.stem == name:
                 return p
         return None
+
+    def trash_file(self, source: Path) -> Path:
+        """Move project media to a recoverable project-local trash folder."""
+        trash = self.edit_dir / "trash"
+        trash.mkdir(parents=True, exist_ok=True)
+        destination = trash / source.name
+        if destination.exists():
+            destination = trash / f"{source.stem}_{int(time.time())}{source.suffix}"
+        return source.replace(destination)
+
+    def list_image_files(self) -> list[Path]:
+        return sorted(p for p in self.videos_dir.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTS)
 
     def load_timeline(self) -> dict:
         if self.timeline_path.exists():
