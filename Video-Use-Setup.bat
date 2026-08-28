@@ -67,14 +67,21 @@ echo.
 echo [5/5] Criando atalho na Area de Trabalho e no Menu Iniciar...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$ws = New-Object -ComObject WScript.Shell;" ^
-    "foreach ($dir in @([Environment]::GetFolderPath('Desktop'), (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'))) {" ^
+    "$startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs';" ^
+    "foreach ($dir in @([Environment]::GetFolderPath('Desktop'), $startMenu)) {" ^
     "  $s = $ws.CreateShortcut((Join-Path $dir 'video-use.lnk'));" ^
     "  $s.TargetPath = '%~dp0Video-Use.vbs';" ^
     "  $s.WorkingDirectory = '%~dp0';" ^
     "  $s.IconLocation = '%~dp0Video-Use.ico';" ^
     "  $s.Description = 'Editor de video video-use';" ^
     "  $s.Save();" ^
-    "}"
+    "}" ^
+    "$u = $ws.CreateShortcut((Join-Path $startMenu 'video-use (atualizar).lnk'));" ^
+    "$u.TargetPath = '%~dp0Video-Use-Update.bat';" ^
+    "$u.WorkingDirectory = '%~dp0';" ^
+    "$u.IconLocation = '%~dp0Video-Use.ico';" ^
+    "$u.Description = 'Baixar e instalar a versao mais nova do video-use';" ^
+    "$u.Save();"
 if errorlevel 1 (
     echo   [aviso] Nao consegui criar o atalho automaticamente - sem problema,
     echo   continua dando duplo-clique em "Video-Use.vbs" normalmente.
@@ -87,6 +94,10 @@ echo.
 echo   De agora em diante, para abrir o editor:
 echo     -^> procura "video-use" no Menu Iniciar, ou usa o atalho
 echo        que apareceu na sua Area de Trabalho
+echo.
+echo   Quando tiver uma atualizacao nova:
+echo     -^> procura "video-use (atualizar)" no Menu Iniciar
+echo        (baixa e instala sozinho, sem mexer no seu .env)
 echo.
 echo   Seus videos ficam em:
 echo     %USERPROFILE%\Videos\video-use

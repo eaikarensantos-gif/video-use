@@ -39,9 +39,12 @@ From the repo root, in File Explorer:
 3. To close it, close the app window, or double-click **`Video-Use-Stop.vbs`**
    if you want to make sure the background server stops too.
 
-Already ran Setup before and just want the Desktop/Start Menu shortcut? Run
-`Video-Use-Setup.bat` again — it's safe to re-run any time (it skips
-straight through the already-installed steps) and only takes a few seconds.
+**To update** — Setup also adds a **"video-use (atualizar)"** entry to the
+Start Menu, pointing at `Video-Use-Update.bat`. Running it downloads the
+latest version of this branch, copies it over the existing install (leaving
+`.env` and your footage untouched), then re-runs Setup automatically to pick
+up any new dependencies and rebuild the frontend — no manual zip download,
+no re-pasting `.env`.
 
 ## Quick start (manual / macOS / Linux)
 
