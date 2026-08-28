@@ -28,9 +28,13 @@ If Not fso.FileExists(backendScript) Then
     WScript.Quit 1
 End If
 
-' 0 = hidden window, False = don't wait for it to exit (it keeps running)
+' 0 = hidden window, False = don't wait for it to exit (it keeps running).
+' Runs via cmd so stdout/stderr get redirected to a log file — pythonw has
+' no console of its own, so without this a crash after startup leaves no
+' trace to debug from.
+logPath = scriptDir & "\video-use-backend.log"
 On Error Resume Next
-shell.Run "pythonw """ & backendScript & """ --videos-dir """ & videosDir & """", 0, False
+shell.Run "cmd /c pythonw """ & backendScript & """ --videos-dir """ & videosDir & """ > """ & logPath & """ 2>&1", 0, False
 launchFailed = (Err.Number <> 0)
 launchError = Err.Description
 Err.Clear
@@ -91,8 +95,8 @@ If started Then
 Else
     MsgBox "O video-use esta demorando mais que o esperado pra iniciar." & vbCrLf & _
            "Abra manualmente no navegador: http://127.0.0.1:8756" & vbCrLf & vbCrLf & _
-           "Se essa pagina tambem nao abrir, rode no PowerShell para ver" & vbCrLf & _
-           "a mensagem de erro:" & vbCrLf & _
-           "python webapp\backend\main.py --videos-dir """ & videosDir & """", _
+           "Se essa pagina tambem nao abrir (ou fechar sozinha), o motivo" & vbCrLf & _
+           "do erro fica salvo neste arquivo, que da pra abrir com o Bloco" & vbCrLf & _
+           "de Notas:" & vbCrLf & logPath, _
            vbExclamation, "video-use"
 End If
