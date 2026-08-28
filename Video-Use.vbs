@@ -1,6 +1,8 @@
 ' Everyday launcher for video-use — double-click, no terminal window.
-' Starts the backend hidden (pythonw = no console) and opens the editor
-' in the default browser once it's had a moment to come up.
+' Starts the backend hidden (pythonw = no console), waits for it to
+' actually answer before opening the browser (polls /api/health instead
+' of a fixed sleep — first-time startup can take longer than a few
+' seconds while Python warms up its import caches).
 '
 ' First time on a new machine, run Video-Use-Setup.bat once instead —
 ' it installs dependencies and builds the frontend, both required before
@@ -27,9 +29,52 @@ If Not fso.FileExists(backendScript) Then
 End If
 
 ' 0 = hidden window, False = don't wait for it to exit (it keeps running)
+On Error Resume Next
 shell.Run "pythonw """ & backendScript & """ --videos-dir """ & videosDir & """", 0, False
+launchFailed = (Err.Number <> 0)
+launchError = Err.Description
+Err.Clear
+On Error Goto 0
 
-' Give the server a moment to start listening before opening the browser.
-WScript.Sleep 2500
+If launchFailed Then
+    MsgBox "Nao consegui iniciar o video-use." & vbCrLf & _
+           "Erro: " & launchError & vbCrLf & vbCrLf & _
+           "Tente rodar Video-Use-Setup.bat de novo, ou abra manualmente" & vbCrLf & _
+           "no PowerShell para ver a mensagem completa:" & vbCrLf & _
+           "python webapp\backend\main.py --videos-dir """ & videosDir & """", _
+           vbCritical, "video-use"
+    WScript.Quit 1
+End If
 
-shell.Run "http://127.0.0.1:8756"
+' Poll until the server actually answers instead of guessing a fixed
+' wait — first-time startup (cold Python import caches) can take well
+' over a few seconds, and this adapts either way.
+healthUrl = "http://127.0.0.1:8756/api/health"
+maxWaitSeconds = 45
+started = False
+Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
+
+For i = 1 To maxWaitSeconds * 2
+    WScript.Sleep 500
+    On Error Resume Next
+    http.Open "GET", healthUrl, False
+    http.SetTimeouts 1000, 1000, 1000, 1000
+    http.Send
+    If Err.Number = 0 And http.Status = 200 Then
+        started = True
+    End If
+    Err.Clear
+    On Error Goto 0
+    If started Then Exit For
+Next
+
+If started Then
+    shell.Run "http://127.0.0.1:8756"
+Else
+    MsgBox "O video-use esta demorando mais que o esperado pra iniciar." & vbCrLf & _
+           "Abra manualmente no navegador: http://127.0.0.1:8756" & vbCrLf & vbCrLf & _
+           "Se essa pagina tambem nao abrir, rode no PowerShell para ver" & vbCrLf & _
+           "a mensagem de erro:" & vbCrLf & _
+           "python webapp\backend\main.py --videos-dir """ & videosDir & """", _
+           vbExclamation, "video-use"
+End If
