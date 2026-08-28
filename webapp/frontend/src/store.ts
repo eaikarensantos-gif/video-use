@@ -46,6 +46,7 @@ interface EditorState {
   videoTrack: () => Track | undefined;
   totalDuration: () => number;
 
+  setCanvasAspect: (size: { width: number; height: number } | null) => void;
   appendVideoClip: (source: string, inPoint: number, outPoint: number) => void;
   updateVideoClip: (clipId: string, patch: Partial<VideoClip>) => void;
   updateVideoTransform: (clipId: string, patch: Partial<ClipTransform>) => void;
@@ -164,6 +165,13 @@ export const useEditor = create<EditorState>((set, get) => ({
   totalDuration: () => {
     const vt = get().videoTrack();
     return vt ? totalVideoDuration(vt.clips as VideoClip[]) : 0;
+  },
+
+  setCanvasAspect: (size) => {
+    withHistory(get, set, (tl) => {
+      tl.canvas = { ...tl.canvas, width: size?.width ?? null, height: size?.height ?? null };
+      return tl;
+    });
   },
 
   appendVideoClip: (source, inPoint, outPoint) => {

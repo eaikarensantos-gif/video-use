@@ -86,9 +86,21 @@ export interface SourceInfo {
   has_audio?: boolean;
 }
 
+export interface SubtitleStyle {
+  font_size?: number;
+  color?: string; // "#RRGGBB"
+  position?: "bottom" | "top" | "middle";
+  background?: boolean;
+  uppercase?: boolean;
+}
+
 export interface Timeline {
   version: number;
-  canvas: { width: number; height: number; fps: number };
+  // width/height are null until the user picks an aspect ratio (Toolbar)
+  // — until then, render.py fits each segment to its own source
+  // orientation instead of a fixed frame, same as every project before
+  // this existed.
+  canvas: { width: number | null; height: number | null; fps: number };
   sources: Record<string, SourceInfo>;
   tracks: Track[];
   subtitles: { enabled: boolean; path: string };

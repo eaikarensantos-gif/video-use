@@ -55,6 +55,56 @@ SUB_FORCE_STYLE = (
     "Alignment=2,MarginV=90"
 )
 
+
+def _hex_to_ass_color(hex_color: str) -> str:
+    """"#RRGGBB" (or bare RRGGBB) -> ASS's opaque "&H00BBGGRR"."""
+    h = hex_color.lstrip("#")
+    if len(h) != 6:
+        return "&H00FFFFFF"
+    r, g, b = h[0:2], h[2:4], h[4:6]
+    return f"&H00{b}{g}{r}".upper()
+
+
+def build_subtitle_force_style(style: dict | None) -> str:
+    """Same defaults/look as SUB_FORCE_STYLE (the proven bold-overlay
+    style) when `style` is None or empty — customization is additive, not
+    a different baseline. Font family stays fixed (Helvetica): libass
+    resolves font names through the OS's own fontconfig, so an arbitrary
+    user-typed name can silently fall back to something else per-machine
+    — not worth the risk for what's a nice-to-have.
+
+    `style`: {"font_size": 18, "color": "#FFFFFF", "position": "bottom" |
+              "top" | "middle", "background": false}
+    """
+    if not style:
+        return SUB_FORCE_STYLE
+    font_size = int(style.get("font_size") or 18)
+    primary_color = _hex_to_ass_color(style.get("color") or "#FFFFFF")
+    position = style.get("position") or "bottom"
+    # Legacy SSA v4 alignment codes, confirmed by rendering each and
+    # visually checking the actual output frame — ffmpeg's `subtitles`
+    # filter does NOT use the ASS v4+ numpad convention (2/8/5) when
+    # converting from a plain SRT the way SUB_FORCE_STYLE's proven
+    # Alignment=2 default might suggest; it's 2/6/10 (bottom/top/middle,
+    # all center-column) instead. Verified with this project's ffmpeg
+    # build — don't "correct" this back to 8/5 without re-checking a
+    # rendered frame first.
+    #
+    # MarginV=90 at the bottom is a platform safe-zone rule (see the
+    # comment above SUB_FORCE_STYLE), not taste — keep it when bottom is
+    # chosen. Top/middle have no such UI to dodge.
+    alignment, margin_v = {"bottom": (2, 90), "top": (6, 60), "middle": (10, 0)}.get(position, (2, 90))
+    if style.get("background"):
+        border_style, back_color = 3, "&H66000000"  # opaque box, ~60% black
+    else:
+        border_style, back_color = 1, "&H00000000"
+    return (
+        f"FontName=Helvetica,FontSize={font_size},Bold=1,"
+        f"PrimaryColour={primary_color},OutlineColour=&H00000000,BackColour={back_color},"
+        f"BorderStyle={border_style},Outline=2,Shadow=0,"
+        f"Alignment={alignment},MarginV={margin_v}"
+    )
+
 # -------- Helpers ------------------------------------------------------------
 
 
@@ -253,6 +303,28 @@ def build_transform_filter(transform: dict) -> str:
     return ",".join(parts)
 
 
+# -------- Canvas aspect ratio (reframe to a fixed target frame) -------------
+
+
+def build_canvas_fit_filter(canvas_w: int, canvas_h: int) -> str:
+    """Scale+center-crop a source of any orientation to fill an exact
+    canvas_w×canvas_h frame — the standard "fill" reframe (matches what
+    CapCut/Reels/TikTok do when footage doesn't match the project's
+    aspect ratio). The per-clip Transform panel can then re-position
+    within this frame if the auto-crop cuts off something important.
+    """
+    return f"scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h}"
+
+
+def _draft_canvas_size(canvas_w: int, canvas_h: int, target_max: int = 1280) -> tuple[int, int]:
+    """Proportionally shrink a canvas for draft-quality renders, rounded
+    to even dimensions (required for yuv420p)."""
+    factor = target_max / max(canvas_w, canvas_h)
+    w = max(2, round(canvas_w * factor / 2) * 2)
+    h = max(2, round(canvas_h * factor / 2) * 2)
+    return w, h
+
+
 # -------- Per-segment extraction (Rule 2 + Rule 3) --------------------------
 
 
@@ -284,11 +356,19 @@ def extract_segment(
     speed: float = 1.0,
     zoom: dict | None = None,
     transform: dict | None = None,
+    canvas: dict | None = None,
 ) -> None:
     """Extract a cut range as its own MP4 with grade + 30ms audio fades baked in.
 
     `-ss` before `-i` for fast accurate seeking. Scale to 1080p from 4K.
-    Portrait sources (height > width) are scaled by height to preserve orientation.
+    Portrait sources (height > width) are scaled by height to preserve
+    orientation — unless `canvas` (a project aspect ratio chosen in the
+    UI: {"width": W, "height": H}) is given, in which case every segment
+    is instead scaled+center-cropped to fill that exact frame regardless
+    of its own orientation (needed for concat: all segments must share one
+    resolution, and it's what lets a project mix portrait/landscape
+    footage or reframe 16:9 into 9:16 for Reels/Shorts). Omitting `canvas`
+    keeps prior behavior byte-for-byte for projects/tests that predate it.
 
     Quality ladder:
       - final (default): 1080p libx264 fast CRF 20
@@ -297,11 +377,17 @@ def extract_segment(
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    portrait = is_portrait_source(source)
-    if draft:
-        scale = "scale=-2:1280" if portrait else "scale=1280:-2"
+    if canvas and canvas.get("width") and canvas.get("height"):
+        canvas_w, canvas_h = int(canvas["width"]), int(canvas["height"])
+        if draft:
+            canvas_w, canvas_h = _draft_canvas_size(canvas_w, canvas_h)
+        scale = build_canvas_fit_filter(canvas_w, canvas_h)
     else:
-        scale = "scale=-2:1920" if portrait else "scale=1920:-2"
+        portrait = is_portrait_source(source)
+        if draft:
+            scale = "scale=-2:1280" if portrait else "scale=1280:-2"
+        else:
+            scale = "scale=-2:1920" if portrait else "scale=1920:-2"
 
     vf_parts: list[str] = []
     if is_hdr_source(source):
@@ -380,11 +466,13 @@ def extract_all_segments(
     )
     clips_dir.mkdir(parents=True, exist_ok=True)
 
+    canvas = edl.get("canvas")
     ranges = edl["ranges"]
     sources = edl["sources"]
 
     seg_paths: list[Path] = []
-    print(f"extracting {len(ranges)} segment(s) → {clips_dir.name}/")
+    canvas_note = f" (canvas {canvas['width']}x{canvas['height']})" if canvas and canvas.get("width") and canvas.get("height") else ""
+    print(f"extracting {len(ranges)} segment(s) → {clips_dir.name}/{canvas_note}")
     for i, r in enumerate(ranges):
         src_name = r["source"]
         src_path = resolve_path(sources[src_name], edit_dir)
@@ -415,6 +503,7 @@ def extract_all_segments(
         extract_segment(
             src_path, start, duration, seg_filter, out_path,
             preview=preview, draft=draft, speed=speed, zoom=zoom, transform=transform,
+            canvas=canvas,
         )
         seg_paths.append(out_path)
 
@@ -557,12 +646,25 @@ def _words_in_range(transcript: dict, t_start: float, t_end: float) -> list[dict
     return out
 
 
-def build_master_srt(edl: dict, edit_dir: Path, out_path: Path) -> None:
+def build_master_srt(
+    edl: dict,
+    edit_dir: Path,
+    out_path: Path,
+    uppercase: bool = True,
+    language: str | None = None,
+) -> None:
     """Build an output-timeline SRT from per-source transcripts.
 
     - 2-word chunks (break on any punctuation in between)
-    - UPPERCASE text
+    - UPPERCASE text by default (set uppercase=False to keep original case)
     - Output times computed as word.start - segment_start + segment_offset
+    - `language`: read transcripts/<source>.<language>.json instead of the
+      original transcripts/<source>.json — the webapp backend writes this
+      file (via translate_captions.py, a Claude call) before invoking this
+      script, since that needs an Anthropic key this script has no reason
+      to require. A source missing its translated file just has no
+      captions for that segment (same as a source with no transcript at
+      all), rather than silently mixing in the wrong language.
     """
     transcripts_dir = edit_dir / "transcripts"
     sources = edl["sources"]
@@ -577,9 +679,10 @@ def build_master_srt(edl: dict, edit_dir: Path, out_path: Path) -> None:
         speed = float(r.get("speed", 1.0)) or 1.0
         seg_duration = (seg_end - seg_start) / speed
 
-        tr_path = transcripts_dir / f"{src_name}.json"
+        tr_filename = f"{src_name}.{language}.json" if language else f"{src_name}.json"
+        tr_path = transcripts_dir / tr_filename
         if not tr_path.exists():
-            print(f"  no transcript for {src_name}, skipping captions for this segment")
+            print(f"  no transcript ({tr_filename}) for {src_name}, skipping captions for this segment")
             seg_offset += seg_duration
             continue
 
@@ -613,7 +716,8 @@ def build_master_srt(edl: dict, edit_dir: Path, out_path: Path) -> None:
             text = re.sub(r"\s+", " ", text).strip()
             # Strip trailing punctuation for cleaner uppercase look
             text = text.rstrip(",;:")
-            text = text.upper()
+            if uppercase:
+                text = text.upper()
             entries.append((out_start, out_end, text))
 
         seg_offset += seg_duration
@@ -910,6 +1014,7 @@ def build_final_composite(
     subtitles_path: Path | None,
     out_path: Path,
     edit_dir: Path,
+    subtitle_style: dict | None = None,
 ) -> None:
     """Final pass: base → video overlays (PTS-shifted) → stickers → text cards
     → subtitles LAST → out.
@@ -984,8 +1089,9 @@ def build_final_composite(
     # Subtitles LAST — Rule 1
     if has_subs:
         subs_abs = str(subtitles_path.resolve()).replace(":", r"\:").replace("'", r"\'")
+        force_style = build_subtitle_force_style(subtitle_style)
         filter_parts.append(
-            f"{current}subtitles='{subs_abs}':force_style='{SUB_FORCE_STYLE}'[outv]"
+            f"{current}subtitles='{subs_abs}':force_style='{force_style}'[outv]"
         )
         out_label = "[outv]"
     else:
@@ -1078,11 +1184,17 @@ def main() -> None:
         concat_segments(segment_paths, base_path, edit_dir)
 
     # 3. Subtitles: build if requested, resolve final path
+    subtitle_style = edl.get("subtitle_style")
+    subtitle_language = edl.get("subtitle_language")
     subs_path: Path | None = None
     if not args.no_subtitles:
         if args.build_subtitles:
             subs_path = edit_dir / "master.srt"
-            build_master_srt(edl, edit_dir, subs_path)
+            build_master_srt(
+                edl, edit_dir, subs_path,
+                uppercase=(subtitle_style or {}).get("uppercase", True),
+                language=subtitle_language,
+            )
         elif edl.get("subtitles"):
             subs_path = resolve_path(edl["subtitles"], edit_dir)
             if not subs_path.exists():
@@ -1092,7 +1204,7 @@ def main() -> None:
     # 4. Composite (overlays + subtitles LAST) → intermediate (pre-loudnorm) path
     overlays = edl.get("overlays") or []
     composite_path = out_path if args.no_loudnorm else out_path.with_suffix(".prenorm.mp4")
-    build_final_composite(base_path, overlays, subs_path, composite_path, edit_dir)
+    build_final_composite(base_path, overlays, subs_path, composite_path, edit_dir, subtitle_style=subtitle_style)
 
     # 5. Mix in background audio tracks (music, ambience), if any
     audio_tracks = edl.get("audio_tracks") or []

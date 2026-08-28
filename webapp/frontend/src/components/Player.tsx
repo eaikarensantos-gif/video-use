@@ -108,17 +108,26 @@ export default function Player() {
   // rightmost (innermost) is applied first, so flip sits rightmost, the
   // zoom/pan scale sits leftmost (outermost, applied last).
   const tf = activeClip?.transform;
-  const videoStyle: React.CSSProperties | undefined = tf
-    ? {
-        opacity: tf.opacity ?? 1,
-        transform: [
-          `scale(${tf.scale ?? 1})`,
-          `translate(${-(tf.x ?? 0) * 100}%, ${-(tf.y ?? 0) * 100}%)`,
-          `rotate(${tf.rotation ?? 0}deg)`,
-          `scale(${tf.flip_h ? -1 : 1}, ${tf.flip_v ? -1 : 1})`,
-        ].join(" "),
-      }
-    : undefined;
+  // A chosen project aspect ratio (Toolbar) locks the frame to that shape
+  // and crops every clip to fill it — object-fit: cover approximates the
+  // real render's scale+crop-to-fill. With no aspect ratio chosen, the
+  // frame just follows the active clip's own intrinsic size, as before.
+  const canvas = timeline?.canvas;
+  const hasFixedAspect = !!(canvas?.width && canvas?.height);
+  const videoStyle: React.CSSProperties = {
+    ...(hasFixedAspect ? { width: "100%", height: "100%", objectFit: "cover" as const } : {}),
+    ...(tf
+      ? {
+          opacity: tf.opacity ?? 1,
+          transform: [
+            `scale(${tf.scale ?? 1})`,
+            `translate(${-(tf.x ?? 0) * 100}%, ${-(tf.y ?? 0) * 100}%)`,
+            `rotate(${tf.rotation ?? 0}deg)`,
+            `scale(${tf.flip_h ? -1 : 1}, ${tf.flip_v ? -1 : 1})`,
+          ].join(" "),
+        }
+      : {}),
+  };
 
   const textTrack = timeline?.tracks.find((t) => t.type === "text");
   const activeTexts = ((textTrack?.clips ?? []) as TextClip[]).filter(
@@ -131,7 +140,10 @@ export default function Player() {
 
   return (
     <div className="player-panel">
-      <div className="player-frame">
+      <div
+        className="player-frame"
+        style={hasFixedAspect ? { aspectRatio: `${canvas!.width} / ${canvas!.height}`, width: "auto", height: "100%" } : undefined}
+      >
         {activeClip ? (
           <video ref={videoRef} playsInline muted={false} style={videoStyle} />
         ) : (

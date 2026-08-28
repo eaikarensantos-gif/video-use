@@ -1,6 +1,14 @@
 import { useEditor } from "../store";
 import { IconExport, IconLogo, IconRedo, IconScissors, IconSparkle, IconUndo } from "../icons";
 
+const ASPECT_PRESETS: { label: string; width: number | null; height: number | null }[] = [
+  { label: "Original (per clip)", width: null, height: null },
+  { label: "16:9 Landscape", width: 1920, height: 1080 },
+  { label: "9:16 Vertical (Reels/Shorts)", width: 1080, height: 1920 },
+  { label: "1:1 Square", width: 1080, height: 1080 },
+  { label: "4:5 Portrait", width: 1080, height: 1350 },
+];
+
 export default function Toolbar({ onExport, onAiEdit }: { onExport: () => void; onAiEdit: () => void }) {
   const dirty = useEditor((s) => s.dirty);
   const saving = useEditor((s) => s.saving);
@@ -12,8 +20,13 @@ export default function Toolbar({ onExport, onAiEdit }: { onExport: () => void; 
   const setZoom = useEditor((s) => s.setZoom);
   const playhead = useEditor((s) => s.playhead);
   const splitVideoClipAt = useEditor((s) => s.splitVideoClipAt);
+  const canvas = useEditor((s) => s.timeline?.canvas);
+  const setCanvasAspect = useEditor((s) => s.setCanvasAspect);
 
   const statusText = saving ? "saving…" : dirty ? "unsaved changes" : "saved";
+  const aspectIndex = ASPECT_PRESETS.findIndex(
+    (p) => p.width === (canvas?.width ?? null) && p.height === (canvas?.height ?? null)
+  );
 
   return (
     <div className="toolbar">
@@ -32,6 +45,21 @@ export default function Toolbar({ onExport, onAiEdit }: { onExport: () => void; 
         <IconScissors size={14} /> Split
       </button>
       <div className="spacer" />
+      <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-1)", fontSize: 11 }}>
+        Aspect ratio
+        <select
+          value={aspectIndex === -1 ? 0 : aspectIndex}
+          onChange={(e) => {
+            const preset = ASPECT_PRESETS[Number(e.target.value)];
+            setCanvasAspect(preset.width && preset.height ? { width: preset.width, height: preset.height } : null);
+          }}
+          title="Reframe the whole project — every clip is scaled/cropped to fill this shape. Original leaves each clip at its own orientation."
+        >
+          {ASPECT_PRESETS.map((p, i) => (
+            <option key={p.label} value={i}>{p.label}</option>
+          ))}
+        </select>
+      </label>
       <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-1)", fontSize: 11 }}>
         Zoom
         <input

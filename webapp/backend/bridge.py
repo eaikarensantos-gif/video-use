@@ -144,6 +144,7 @@ def timeline_to_edl(timeline: dict, videos_dir: Path | None = None) -> dict:
         "overlays": overlays,
         "audio_tracks": audio_tracks,
         "subtitles": subs.get("path") if subs.get("enabled") and subs.get("path") else None,
+        "canvas": timeline.get("canvas"),
     }
 
 
@@ -231,9 +232,17 @@ def edl_to_timeline(edl: dict, media_info: dict[str, dict], videos_dir: Path | N
     tracks.append({"id": "a1", "type": "audio", "name": "Audio", "clips": audio_clips})
 
     subs_path = edl.get("subtitles")
+    # width/height stay null until the user explicitly picks an aspect
+    # ratio (Toolbar → Aspect ratio) — with no canvas locked in, render.py
+    # keeps scaling each segment to fit its own source orientation, same
+    # as every project before this feature existed. Defaulting this to
+    # 1920x1080 would silently crop portrait phone footage in every new
+    # project to fill a landscape frame — exactly the kind of regression
+    # this project can't afford another round of "meu video sumiu" over.
+    canvas = edl.get("canvas") or {"width": None, "height": None, "fps": 24}
     return {
         "version": 1,
-        "canvas": {"width": 1920, "height": 1080, "fps": 24},
+        "canvas": canvas,
         "sources": sources,
         "tracks": tracks,
         "subtitles": {"enabled": bool(subs_path), "path": subs_path or ""},
@@ -243,7 +252,7 @@ def edl_to_timeline(edl: dict, media_info: dict[str, dict], videos_dir: Path | N
 def empty_timeline() -> dict:
     return {
         "version": 1,
-        "canvas": {"width": 1920, "height": 1080, "fps": 24},
+        "canvas": {"width": None, "height": None, "fps": 24},
         "sources": {},
         "tracks": [
             {"id": "v1", "type": "video", "name": "Video", "clips": []},

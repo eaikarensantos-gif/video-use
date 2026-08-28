@@ -366,12 +366,53 @@ def create_app(videos_dir: Path) -> FastAPI:
 
     # ---- Export ------------------------------------------------------------
 
+    def _ensure_translated_transcripts(edl: dict, language: str) -> None:
+        """Translate every used source's transcript into `language`
+        (Claude, cached to disk) before the render job starts — kept out
+        of helpers/render.py since that script has no Anthropic
+        dependency. Raises RuntimeError (surfaced as a 400) if there's no
+        API key; sources with no transcript at all are silently skipped,
+        same as they are for subtitles in the original language."""
+        from ai_editor import load_anthropic_key
+        from translate_captions import translate_transcript
+
+        api_key = load_anthropic_key()
+        transcripts_dir = project.edit_dir / "transcripts"
+        used_sources = {r["source"] for r in edl.get("ranges", [])}
+        for name in used_sources:
+            original = transcripts_dir / f"{name}.json"
+            if not original.exists():
+                continue
+            cache = transcripts_dir / f"{name}.{language}.json"
+            translate_transcript(original, language, api_key, cache)
+
     @app.post("/api/export")
-    def export(mode: str = Body("preview", embed=True), build_subtitles: bool = Body(True, embed=True)):
+    def export(
+        mode: str = Body("preview", embed=True),
+        build_subtitles: bool = Body(True, embed=True),
+        subtitle_style: dict | None = Body(None, embed=True),
+        subtitle_language: str | None = Body(None, embed=True),
+    ):
         if mode not in ("preview", "final"):
             raise HTTPException(400, "mode must be 'preview' or 'final'")
         timeline = project.load_timeline()
         project.save_timeline(timeline)  # ensure edl.json reflects latest edits
+
+        # subtitle_style/subtitle_language are export-request settings, not
+        # timeline state — written straight into this render's edl.json
+        # rather than round-tripped through bridge.py.
+        if build_subtitles and (subtitle_style or subtitle_language):
+            edl = json.loads(project.edl_path.read_text())
+            if subtitle_style:
+                edl["subtitle_style"] = subtitle_style
+            if subtitle_language and subtitle_language != "original":
+                edl["subtitle_language"] = subtitle_language
+                try:
+                    _ensure_translated_transcripts(edl, subtitle_language)
+                except RuntimeError as exc:
+                    raise HTTPException(400, str(exc)) from exc
+            project.edl_path.write_text(json.dumps(edl, indent=2))
+
         out_name = "preview.mp4" if mode == "preview" else "final.mp4"
         output_path = project.edit_dir / out_name
         job_id = start_render_job(

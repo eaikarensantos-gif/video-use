@@ -1,4 +1,4 @@
-import type { AudioItem, CleanupResult, ExportStatus, GradePreset, JobStatus, MediaItem, Sticker, Timeline } from "./types";
+import type { AudioItem, CleanupResult, ExportStatus, GradePreset, JobStatus, MediaItem, Sticker, SubtitleStyle, Timeline } from "./types";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -38,11 +38,21 @@ export const api = {
       json<{ name: string; filename: string; kind: "video" | "audio" }>(r)
     );
   },
-  startExport: (mode: "preview" | "final", buildSubtitles: boolean) =>
+  startExport: (
+    mode: "preview" | "final",
+    buildSubtitles: boolean,
+    subtitleStyle?: SubtitleStyle,
+    subtitleLanguage?: string
+  ) =>
     fetch("/api/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode, build_subtitles: buildSubtitles }),
+      body: JSON.stringify({
+        mode,
+        build_subtitles: buildSubtitles,
+        subtitle_style: subtitleStyle ?? null,
+        subtitle_language: subtitleLanguage ?? null,
+      }),
     }).then((r) => json<{ job_id: string }>(r)),
   exportStatus: (jobId: string) => fetch(`/api/export/${jobId}`).then((r) => json<ExportStatus>(r)),
   transcribeMedia: (name: string, language?: string) =>
