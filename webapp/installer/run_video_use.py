@@ -41,6 +41,28 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# A PyInstaller windowed (console=False) build has no console to attach
+# to, so sys.stdout/stderr are None — confirmed by a real CI crash:
+# uvicorn's default logging config calls sys.stdout.isatty() while
+# deciding whether to use colored output and blows up with
+# AttributeError: 'NoneType' object has no attribute 'isatty'. Give it
+# (and anything else that assumes a real stream, our own print() calls
+# included) somewhere harmless to write before any of that runs.
+if sys.stdout is None or sys.stderr is None:
+    import io
+
+    class _NullWriter(io.TextIOBase):
+        def write(self, s: str) -> int:
+            return len(s)
+
+        def isatty(self) -> bool:
+            return False
+
+    if sys.stdout is None:
+        sys.stdout = _NullWriter()
+    if sys.stderr is None:
+        sys.stderr = _NullWriter()
+
 # Force-import so PyInstaller's analyzer bundles these and their hidden
 # deps properly (main.py imports them too, but by then they're cached).
 import fastapi  # noqa: F401
