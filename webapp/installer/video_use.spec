@@ -9,23 +9,36 @@
 import sys
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_submodules
+
 block_cipher = None
 
 SPEC_DIR = Path(SPECPATH).resolve()
 REPO_ROOT = SPEC_DIR.parent.parent
 INSTALLER_DIR = SPEC_DIR
 
+# webapp/backend/main.py and its siblings are bundled as loose data files
+# (see the Tree() calls below), specifically so their own Path(__file__)
+# logic keeps working unmodified — but that also means PyInstaller's
+# static analyzer never actually reads their source, so it can't see
+# imports like `from fastapi.middleware.cors import CORSMiddleware` on
+# its own (confirmed by a real CI failure: ModuleNotFoundError for
+# exactly that submodule). Pull in every fastapi/starlette submodule
+# unconditionally instead of hand-listing each one main.py happens to
+# use today — cheap insurance against the next one.
+hidden = collect_submodules("fastapi") + collect_submodules("starlette")
+hidden += [
+    # Starlette's multipart form parsing (needed for file upload) imports
+    # this lazily, only when a multipart request actually arrives.
+    "multipart",
+]
+
 a = Analysis(
     [str(SPEC_DIR / "run_video_use.py")],
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[
-        # Starlette's multipart form parsing (needed for file upload)
-        # imports this lazily, only when a multipart request actually
-        # arrives — easy for PyInstaller's static analysis to miss.
-        "multipart",
-    ],
+    hiddenimports=hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
