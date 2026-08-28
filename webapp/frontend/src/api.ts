@@ -74,11 +74,11 @@ export const api = {
     fetch("/api/media/transcribe-all", { method: "POST" }).then((r) => json<{ job_id: string }>(r)),
   transcript: (name: string) =>
     fetch(`/api/media/${encodeURIComponent(name)}/transcript`).then((r) => json<Transcript>(r)),
-  autoEdit: (brief: string, targetDuration?: number) =>
+  autoEdit: (brief: string, targetDuration?: number, playhead = 0, timelineDuration = 0) =>
     fetch("/api/ai/auto-edit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brief, target_duration: targetDuration ?? null }),
+      body: JSON.stringify({ brief, target_duration: targetDuration ?? null, playhead, timeline_duration: timelineDuration }),
     }).then((r) => json<{ job_id: string }>(r)),
   aiStatus: () => fetch("/api/ai/status").then((r) => json<AiProviderStatus>(r)),
   jobStatus: <T = any>(jobId: string) => fetch(`/api/jobs/${jobId}`).then((r) => json<JobStatus<T>>(r)),

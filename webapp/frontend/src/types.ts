@@ -159,6 +159,17 @@ export interface CleanupResult {
   keep_ranges: { in: number; out: number }[];
 }
 
+export interface AiTextOverlay {
+  text: string;
+  start: number;
+  duration: number;
+  position: "top" | "center" | "bottom";
+  font_size: number;
+  color: string;
+  background: boolean;
+  reason: string;
+}
+
 export interface AiProviderStatus {
   provider: "openai" | "anthropic" | null;
   model: string | null;

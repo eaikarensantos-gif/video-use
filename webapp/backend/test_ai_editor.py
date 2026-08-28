@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from ai_editor import configured_provider, parse_ranges, validate_ranges
+from ai_editor import build_prompt, configured_provider, parse_ranges, parse_text_overlays, validate_ranges
 
 
 class AiEditorValidationTests(unittest.TestCase):
@@ -21,6 +21,21 @@ class AiEditorValidationTests(unittest.TestCase):
         status = configured_provider()
         self.assertEqual(status["provider"], "openai")
         self.assertEqual(status["model"], "gpt-5.4-mini")
+
+    def test_visual_request_plan_can_contain_text_without_cuts(self):
+        payload = json.dumps({"cuts": [], "text_overlays": [{
+            "text": "home office", "start": 12, "duration": 3, "position": "center",
+            "font_size": 64, "color": "white", "background": False, "reason": "requested text",
+        }]})
+        self.assertEqual(parse_ranges(payload), [])
+        overlays = parse_text_overlays(payload, timeline_duration=30)
+        self.assertEqual(overlays[0]["text"], "home office")
+        self.assertEqual(overlays[0]["start"], 12)
+
+    def test_prompt_includes_playhead_and_visual_routing_rule(self):
+        prompt = build_prompt("none", "escreva home office na tela", None, playhead=8.5, timeline_duration=20)
+        self.assertIn("Current playhead: 8.50", prompt)
+        self.assertIn("Do not propose cuts for a visual-only request", prompt)
 
     def test_rejects_invalid_time_range(self):
         with self.assertRaises(RuntimeError):

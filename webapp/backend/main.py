@@ -325,12 +325,17 @@ def create_app(videos_dir: Path) -> FastAPI:
         return configured_provider()
 
     @app.post("/api/ai/auto-edit")
-    def ai_auto_edit(brief: str = Body(..., embed=True), target_duration: float | None = Body(None, embed=True)):
+    def ai_auto_edit(
+        brief: str = Body(..., embed=True), target_duration: float | None = Body(None, embed=True),
+        playhead: float = Body(0, embed=True), timeline_duration: float = Body(0, embed=True),
+    ):
         def work(job: Job) -> None:
             from ai_editor import run_auto_edit
 
-            ranges = run_auto_edit(project.edit_dir, brief, target_duration, log=job.log.append)
-            job.result = {"ranges": ranges}
+            job.result = run_auto_edit(
+                project.edit_dir, brief, target_duration, playhead=playhead,
+                timeline_duration=timeline_duration, log=job.log.append,
+            )
 
         job_id = start_thread_job(work)
         return {"job_id": job_id}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { AiProviderStatus, AutoEditRange, JobStatus } from "../types";
+import type { AiProviderStatus, AiTextOverlay, AutoEditRange, JobStatus } from "../types";
 import { useEditor } from "../store";
 
 /** Real AI auto-edit: sends a brief + the transcribed footage to the configured provider and
@@ -10,13 +10,18 @@ import { useEditor } from "../store";
 export default function AiEditorModal({ onClose }: { onClose: () => void }) {
   const media = useEditor((s) => s.media);
   const applyAutoEditRanges = useEditor((s) => s.applyAutoEditRanges);
+  const applyAiTextOverlays = useEditor((s) => s.applyAiTextOverlays);
+  const playhead = useEditor((s) => s.playhead);
+  const totalDuration = useEditor((s) => s.totalDuration);
 
   const [brief, setBrief] = useState("");
   const [targetDuration, setTargetDuration] = useState<string>("");
   const [jobId, setJobId] = useState<string | null>(null);
-  const [status, setStatus] = useState<JobStatus<{ ranges: AutoEditRange[] }> | null>(null);
+  const [status, setStatus] = useState<JobStatus<{ ranges: AutoEditRange[]; text_overlays: AiTextOverlay[] }> | null>(null);
   const [ranges, setRanges] = useState<AutoEditRange[] | null>(null);
+  const [textOverlays, setTextOverlays] = useState<AiTextOverlay[]>([]);
   const [included, setIncluded] = useState<Set<number>>(new Set());
+  const [includedText, setIncludedText] = useState<Set<number>>(new Set());
   const [provider, setProvider] = useState<AiProviderStatus | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -34,16 +39,19 @@ export default function AiEditorModal({ onClose }: { onClose: () => void }) {
 
   async function generate() {
     const dur = targetDuration.trim() ? Number(targetDuration) : undefined;
-    const { job_id } = await api.autoEdit(brief, dur);
+    const { job_id } = await api.autoEdit(brief, dur, playhead, totalDuration());
     setJobId(job_id);
     pollRef.current = setInterval(async () => {
-      const s = await api.jobStatus<{ ranges: AutoEditRange[] }>(job_id);
+      const s = await api.jobStatus<{ ranges: AutoEditRange[]; text_overlays: AiTextOverlay[] }>(job_id);
       setStatus(s);
       if (s.status === "done") {
         if (pollRef.current) clearInterval(pollRef.current);
         const r = s.result?.ranges ?? [];
+        const texts = s.result?.text_overlays ?? [];
         setRanges(r);
+        setTextOverlays(texts);
         setIncluded(new Set(r.map((_, i) => i)));
+        setIncludedText(new Set(texts.map((_, i) => i)));
       } else if (s.status === "error") {
         if (pollRef.current) clearInterval(pollRef.current);
       }
@@ -58,10 +66,20 @@ export default function AiEditorModal({ onClose }: { onClose: () => void }) {
     });
   }
 
+  function toggleText(i: number) {
+    setIncludedText((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  }
+
   function apply() {
     if (!ranges) return;
     const chosen = ranges.filter((_, i) => included.has(i));
-    applyAutoEditRanges(chosen);
+    const chosenText = textOverlays.filter((_, i) => includedText.has(i));
+    if (chosen.length) applyAutoEditRanges(chosen);
+    if (chosenText.length) applyAiTextOverlays(chosenText);
     onClose();
   }
 
@@ -82,8 +100,8 @@ export default function AiEditorModal({ onClose }: { onClose: () => void }) {
           <>
             {untranscribed.length > 0 && (
               <div className="dur" style={{ color: "var(--danger)", marginBottom: 10 }}>
-                {untranscribed.length} clip(s) have no transcript yet — the AI can only work from
-                transcribed footage. Transcribe them in the Media panel first for the best cut.
+                {untranscribed.length} clipe(s) sem transcrição. Isso não impede textos e elementos visuais,
+                mas cortes baseados na fala exigem transcrição.
               </div>
             )}
             <div className="field">
@@ -108,7 +126,7 @@ export default function AiEditorModal({ onClose }: { onClose: () => void }) {
             <div className="actions">
               <button className="ghost" onClick={onClose}>Cancel</button>
               <button className="primary" onClick={generate} disabled={!brief.trim() || !provider?.configured}>
-                Propose cut
+                Propor edição
               </button>
             </div>
           </>
@@ -137,8 +155,7 @@ export default function AiEditorModal({ onClose }: { onClose: () => void }) {
         {ranges && (
           <>
             <div className="dur" style={{ marginBottom: 6 }}>
-              {ranges.length} proposed cut(s) — review before applying. Nothing has touched your
-              timeline yet.
+              {ranges.length + textOverlays.length} operação(ões) proposta(s) — revise antes de aplicar.
             </div>
             <div className="cut-list">
               {ranges.map((r, i) => (
@@ -153,11 +170,23 @@ export default function AiEditorModal({ onClose }: { onClose: () => void }) {
                   </div>
                 </label>
               ))}
+              {textOverlays.map((item, i) => (
+                <label key={`text-${i}`} className="cut-row">
+                  <input type="checkbox" checked={includedText.has(i)} onChange={() => toggleText(i)} />
+                  <div className="cut-row-body">
+                    <div className="cut-beat">Texto na tela: “{item.text}”</div>
+                    <div className="cut-meta">
+                      {fmt(item.start)} · {item.duration.toFixed(1)}s · {item.position}
+                    </div>
+                    {item.reason && <div className="cut-reason">{item.reason}</div>}
+                  </div>
+                </label>
+              ))}
             </div>
             <div className="actions">
               <button className="ghost" onClick={onClose}>Discard</button>
-              <button className="primary" onClick={apply} disabled={included.size === 0}>
-                Apply {included.size} clip(s) to timeline
+              <button className="primary" onClick={apply} disabled={included.size + includedText.size === 0}>
+                Aplicar {included.size + includedText.size} operação(ões)
               </button>
             </div>
           </>

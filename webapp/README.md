@@ -97,6 +97,10 @@ ANTHROPIC_API_KEY=...    # optional fallback
   (source, in/out, a short label, and why); you review, uncheck anything you
   don't want, and only then click **Apply** to write them to the video track.
   Nothing is ever applied automatically.
+  Visual-only requests such as “escreva home office na tela” produce a
+  reviewable text-overlay operation instead of searching the transcript for
+  matching phrases. Timing defaults to the current playhead for three seconds
+  when the brief does not specify it.
 - **Cleanup / silence + filler-word removal** (Inspector, selected video
   clip → **✂ Limpar**) — no LLM call, purely from the transcript's word
   timestamps: flags silences above a threshold you set and unambiguous

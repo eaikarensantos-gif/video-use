@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api } from "./api";
-import type { AudioClip, AudioItem, AutoEditRange, ClipTransform, MediaItem, OverlayClip, Sticker, TextClip, Timeline, Track, VideoClip } from "./types";
+import type { AiTextOverlay, AudioClip, AudioItem, AutoEditRange, ClipTransform, MediaItem, OverlayClip, Sticker, TextClip, Timeline, Track, VideoClip } from "./types";
 import { totalVideoDuration } from "./layout";
 
 let idCounter = 0;
@@ -63,6 +63,7 @@ interface EditorState {
   updateAudioClip: (clipId: string, patch: Partial<AudioClip>) => void;
 
   applyAutoEditRanges: (ranges: AutoEditRange[]) => void;
+  applyAiTextOverlays: (overlays: AiTextOverlay[]) => void;
 
   undo: () => void;
   redo: () => void;
@@ -362,6 +363,22 @@ export const useEditor = create<EditorState>((set, get) => ({
           note: r.beat || undefined,
         })
       );
+      return tl;
+    });
+  },
+
+  applyAiTextOverlays: (overlays) => {
+    if (!overlays.length) return;
+    withHistory(get, set, (tl) => {
+      const track = tl.tracks.find((t) => t.type === "text");
+      if (!track) return tl;
+      for (const item of overlays) {
+        track.clips.push({
+          id: newId("text"), start: item.start, duration: item.duration, text: item.text,
+          style: { position: item.position, font_size: item.font_size, color: item.color,
+                   background: item.background, animation: "fade" },
+        } as TextClip);
+      }
       return tl;
     });
   },
