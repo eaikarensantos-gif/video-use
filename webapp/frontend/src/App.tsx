@@ -7,6 +7,9 @@ import Timeline from "./components/Timeline";
 import Inspector from "./components/Inspector";
 import ExportModal from "./components/ExportModal";
 import AiEditorModal from "./components/AiEditorModal";
+import UpdateModal from "./components/UpdateModal";
+import { api } from "./api";
+import type { UpdateInfo } from "./types";
 
 export default function App() {
   const load = useEditor((s) => s.load);
@@ -20,9 +23,16 @@ export default function App() {
   const removeClip = useEditor((s) => s.removeClip);
   const [exportOpen, setExportOpen] = useState(false);
   const [aiEditOpen, setAiEditOpen] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
 
   useEffect(() => {
     load();
+    const timer = window.setTimeout(() => {
+      api.checkUpdate().then((info) => {
+        if (info.available) setUpdateInfo(info);
+      }).catch(() => undefined);
+    }, 1800);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   useEffect(() => {
@@ -66,6 +76,7 @@ export default function App() {
       <Timeline />
       {exportOpen && <ExportModal onClose={() => setExportOpen(false)} />}
       {aiEditOpen && <AiEditorModal onClose={() => setAiEditOpen(false)} />}
+      {updateInfo && <UpdateModal info={updateInfo} onClose={() => setUpdateInfo(null)} />}
     </div>
   );
 }

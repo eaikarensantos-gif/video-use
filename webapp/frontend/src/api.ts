@@ -1,4 +1,4 @@
-import type { AudioItem, CleanupResult, ExportStatus, GradePreset, JobStatus, MediaItem, Sticker, Timeline } from "./types";
+import type { AudioItem, CleanupResult, ExportStatus, GradePreset, JobStatus, MediaItem, Sticker, Timeline, UpdateInfo } from "./types";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -9,6 +9,15 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export const api = {
+  checkUpdate: () => fetch("/api/update/check").then((r) => json<UpdateInfo>(r)),
+  downloadUpdate: (downloadUrl: string, digest?: string) =>
+    fetch("/api/update/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Video-Use-Update-Intent": "confirmed" },
+      body: JSON.stringify({ download_url: downloadUrl, digest: digest || null }),
+    }).then((r) => json<{ job_id: string }>(r)),
+  installUpdate: () =>
+    fetch("/api/update/install", { method: "POST", headers: { "X-Video-Use-Update-Intent": "confirmed" } }).then((r) => json<{ ok: boolean; message: string }>(r)),
   media: () => fetch("/api/media").then((r) => json<MediaItem[]>(r)),
   waveform: (name: string) => fetch(`/api/media/${encodeURIComponent(name)}/waveform`).then((r) => json<number[]>(r)),
   timeline: () => fetch("/api/timeline").then((r) => json<Timeline>(r)),

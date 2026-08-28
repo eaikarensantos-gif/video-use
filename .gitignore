@@ -39,6 +39,7 @@ Thumbs.db
 # Node / Remotion (installed on demand, not vendored)
 node_modules/
 package-lock.json
+!webapp/frontend/package-lock.json
 yarn.lock
 .npm/
 *.tsbuildinfo
