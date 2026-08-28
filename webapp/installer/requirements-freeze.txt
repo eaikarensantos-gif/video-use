@@ -1,0 +1,19 @@
+# Slim dependency set for the frozen Windows build — deliberately not the
+# full pyproject.toml [webapp] extra. The base package's librosa/matplotlib/
+# manim are chat-flow-only (helpers/timeline_view.py, animations) and are
+# never imported by webapp/backend at runtime — leaving them out avoids
+# freezing numba (notoriously hard to bundle with PyInstaller) for a
+# feature this installer doesn't ship.
+#
+# Plain "uvicorn" (not uvicorn[standard]) on purpose: the [standard] extra
+# pulls in uvloop (Unix-only) and httptools (needs a C toolchain to build
+# on Windows) — neither is available/needed here. Pure-Python h11 parsing
+# is plenty fast for a single-user localhost server.
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+anthropic>=1.0
+openai>=3.5.0
+requests
+numpy
+pyinstaller>=6.0

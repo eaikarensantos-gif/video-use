@@ -60,6 +60,43 @@ PRESETS: dict[str, str] = {
 
     # Flat — no grade. Useful as a sentinel for "skip grading this source".
     "none": "",
+
+    # -------- Additional creative presets (visual editor effects panel) ----
+
+    # Punchy, saturated, slightly cooler — social/vlog default.
+    "vivid": (
+        "eq=contrast=1.1:brightness=0.01:saturation=1.25,"
+        "curves=master='0/0 0.2/0.18 0.8/0.85 1/1'"
+    ),
+
+    # Classic desaturated film look, lifted blacks, warm highlights.
+    "vintage": (
+        "eq=contrast=0.95:brightness=0.02:saturation=0.65,"
+        "colorbalance=rs=0.05:gs=0.02:bs=-0.06:rm=0.06:gm=0.0:bm=-0.04,"
+        "curves=master='0/0.05 0.5/0.48 1/0.92'"
+    ),
+
+    # Full desaturation, boosted contrast — editorial / documentary mono.
+    "black_and_white": "hue=s=0,eq=contrast=1.15:brightness=0.0",
+
+    # Steep S-curve, crushed shadows — punchy high-contrast look.
+    "high_contrast": (
+        "eq=contrast=1.25:saturation=1.05,"
+        "curves=master='0/0 0.3/0.18 0.7/0.85 1/1'"
+    ),
+
+    # Soft, slightly lifted highlights and gentle desaturation — dreamy/beauty
+    # look. A true bloom needs a split/blend filtergraph (blur the highlights,
+    # screen it back over the original); single-chain eq/curves gets close
+    # enough for a preset without needing extra inputs in extract_segment's
+    # single -vf chain.
+    "soft_glow": (
+        "eq=contrast=0.95:brightness=0.03:saturation=0.85,"
+        "curves=master='0/0.03 0.5/0.52 1/0.98'"
+    ),
+
+    # Darkened corners for a focused, cinematic frame.
+    "vignette": "vignette=PI/4",
 }
 
 

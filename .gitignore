@@ -17,6 +17,11 @@ dist/
 .mypy_cache/
 .ruff_cache/
 
+# Windows installer build (produced by .github/workflows/build-windows-installer.yml,
+# never vendored — ffmpeg binaries downloaded fresh each CI run)
+webapp/installer/ffmpeg/
+webapp/installer/dist-installer/
+
 # Virtual environments
 .venv/
 venv/
@@ -34,8 +39,10 @@ Thumbs.db
 # Node / Remotion (installed on demand, not vendored)
 node_modules/
 package-lock.json
+!webapp/frontend/package-lock.json
 yarn.lock
 .npm/
+*.tsbuildinfo
 
 # Manim render artifacts (when running skills/manim-video scripts locally)
 media/

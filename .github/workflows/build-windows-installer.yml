@@ -1,0 +1,134 @@
+name: Build Windows installer
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - claude/video-use-interface-fl5c07
+    tags:
+      - "v*"
+    paths:
+      - "webapp/backend/**"
+      - "webapp/frontend/**"
+      - "webapp/installer/**"
+      - "helpers/**"
+      - "static/**"
+      - ".github/workflows/build-windows-installer.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Build frontend
+        shell: bash
+        working-directory: webapp/frontend
+        run: |
+          set -e
+          npm ci
+          npm run build
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $tagVersion = "${{ github.ref_name }}".TrimStart("v")
+          $sourceVersion = python -c "import sys; sys.path.insert(0, 'webapp/backend'); from version import APP_VERSION; print(APP_VERSION)"
+          if ($tagVersion -ne $sourceVersion) { throw "Tag v$tagVersion does not match app version $sourceVersion" }
+
+      - name: Install frozen-build Python deps
+        shell: bash
+        run: set -e && pip install -r webapp/installer/requirements-freeze.txt
+
+      - name: Download ffmpeg/ffprobe (Windows static build)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path webapp/installer/ffmpeg | Out-Null
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg-extract -Force
+          $bin = Get-ChildItem -Path ffmpeg-extract -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
+          Copy-Item $bin.FullName webapp/installer/ffmpeg/ffmpeg.exe
+          $probeBin = Get-ChildItem -Path ffmpeg-extract -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
+          Copy-Item $probeBin.FullName webapp/installer/ffmpeg/ffprobe.exe
+
+      - name: Run PyInstaller
+        shell: bash
+        working-directory: webapp/installer
+        run: set -e && pyinstaller video_use.spec
+
+      - name: Smoke-test the frozen bundle starts and answers /api/health
+        shell: pwsh
+        working-directory: webapp/installer
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = "dist\video-use\video-use.exe"
+          if (-not (Test-Path $exe)) { throw "video-use.exe was not produced by PyInstaller" }
+          # A headless runner has no interactive desktop session to open a
+          # real Edge window in — VIDEO_USE_SMOKETEST makes the frozen exe
+          # start the server and then just block, skipping the browser
+          # launch, so this only tests what CI actually can: that the
+          # PyInstaller bundle imports everything and serves real requests.
+          $env:VIDEO_USE_SMOKETEST = "1"
+          $proc = Start-Process -FilePath $exe -PassThru
+          try {
+            $healthy = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              if ($proc.HasExited) { throw "video-use.exe exited early with code $($proc.ExitCode)" }
+              try {
+                $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8756/api/health" -TimeoutSec 2
+                if ($resp.StatusCode -eq 200) { $healthy = $true; Write-Host "Health check OK: $($resp.Content)"; break }
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            if (-not $healthy) {
+              $crashLog = "dist\video-use\video-use-crash.log"
+              if (Test-Path $crashLog) {
+                Write-Host "----- video-use-crash.log -----"
+                Get-Content $crashLog | Write-Host
+                Write-Host "--------------------------------"
+              } else {
+                Write-Host "(no video-use-crash.log was written)"
+              }
+              throw "server never answered /api/health"
+            }
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Install Inno Setup
+        shell: bash
+        run: set -e && choco install innosetup --no-progress -y
+
+      - name: Compile installer
+        shell: pwsh
+        working-directory: webapp/installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC.exe exited with code $LASTEXITCODE" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video-use-setup
+          path: webapp/installer/dist-installer/video-use-setup.exe
+          if-no-files-found: error
+
+      - name: Publish GitHub Release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: webapp/installer/dist-installer/video-use-setup.exe
+          generate_release_notes: true
