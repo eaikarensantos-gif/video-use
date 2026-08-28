@@ -1,0 +1,76 @@
+name: Build Windows installer
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build frontend
+        working-directory: webapp/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install frozen-build Python deps
+        run: pip install -r webapp/installer/requirements-freeze.txt
+
+      - name: Download ffmpeg/ffprobe (Windows static build)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path webapp/installer/ffmpeg | Out-Null
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg-extract -Force
+          $bin = Get-ChildItem -Path ffmpeg-extract -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
+          Copy-Item $bin.FullName webapp/installer/ffmpeg/ffmpeg.exe
+          $probeBin = Get-ChildItem -Path ffmpeg-extract -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
+          Copy-Item $probeBin.FullName webapp/installer/ffmpeg/ffprobe.exe
+
+      - name: Run PyInstaller
+        working-directory: webapp/installer
+        run: pyinstaller video_use.spec
+
+      - name: Smoke-test the frozen bundle starts and answers /api/health
+        shell: pwsh
+        working-directory: webapp/installer
+        run: |
+          $exe = "dist\video-use\video-use.exe"
+          if (-not (Test-Path $exe)) { throw "video-use.exe was not produced by PyInstaller" }
+          # video-use.exe opens an Edge window and blocks on it, which
+          # doesn't exist on a CI runner — just confirm the bundle's
+          # Python entry point imports and starts the server cleanly by
+          # running it with a short timeout via the bundled interpreter,
+          # then check the health endpoint from a second process.
+          $proc = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 15
+          try {
+            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8756/api/health" -TimeoutSec 5
+            if ($resp.StatusCode -ne 200) { throw "health check returned $($resp.StatusCode)" }
+            Write-Host "Health check OK: $($resp.Content)"
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Compile installer
+        working-directory: webapp/installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video-use-setup
+          path: webapp/installer/dist-installer/video-use-setup.exe
+          if-no-files-found: error
