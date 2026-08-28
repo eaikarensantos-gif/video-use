@@ -166,6 +166,19 @@ export interface JobStatus<T = any> {
   result: T | null;
 }
 
+export interface UpdateInfo {
+  current_version: string;
+  latest_version?: string;
+  available: boolean;
+  release_name?: string;
+  notes?: string;
+  published_at?: string;
+  download_url?: string;
+  size?: number;
+  digest?: string;
+  error?: string;
+}
+
 export function isVideoClip(c: any, track: Track): c is VideoClip {
   return track.type === "video";
 }

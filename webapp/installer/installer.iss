@@ -7,7 +7,7 @@
 ; Windows apps (VS Code, Discord, etc.) install themselves.
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.0"
+  #define MyAppVersion "0.2.0"
 #endif
 
 [Setup]
@@ -15,6 +15,8 @@ AppId={{B3B6E6C1-9A3E-4C7C-9C7E-VIDEOUSE0001}
 AppName=video-use
 AppVersion={#MyAppVersion}
 AppPublisher=video-use
+AppPublisherURL=https://github.com/eaikarensantos-gif/video-use
+AppUpdatesURL=https://github.com/eaikarensantos-gif/video-use/releases
 DefaultDirName={localappdata}\Programs\video-use
 DefaultGroupName=video-use
 DisableProgramGroupPage=yes
@@ -45,3 +47,6 @@ Name: "{userdesktop}\video-use"; Filename: "{app}\video-use.exe"; WorkingDir: "{
 
 [Run]
 Filename: "{app}\video-use.exe"; Description: "Launch video-use now"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+Type: files; Name: "{app}\video-use-crash.log"

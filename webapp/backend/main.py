@@ -28,7 +28,7 @@ for p in (str(HELPERS_DIR), str(BACKEND_DIR)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from fastapi import Body, FastAPI, File, HTTPException, UploadFile  # noqa: E402
+from fastapi import Body, FastAPI, File, Header, HTTPException, UploadFile  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import FileResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
@@ -42,6 +42,7 @@ from mediainfo import (  # noqa: E402
     probe_media,
 )
 from project import AUDIO_EXTS, VIDEO_EXTS, Project  # noqa: E402
+from version import APP_VERSION  # noqa: E402
 
 
 def create_app(videos_dir: Path) -> FastAPI:
@@ -58,7 +59,53 @@ def create_app(videos_dir: Path) -> FastAPI:
 
     @app.get("/api/health")
     def health():
-        return {"ok": True, "videos_dir": str(project.videos_dir)}
+        return {"ok": True, "videos_dir": str(project.videos_dir), "version": APP_VERSION}
+
+    # ---- Desktop application updates ----------------------------------
+
+    @app.get("/api/update/check")
+    def update_check():
+        from updater import check_for_update
+
+        return check_for_update()
+
+    @app.post("/api/update/download")
+    def update_download(payload: dict = Body(...), x_video_use_update_intent: str = Header("")):
+        from updater import download_update
+
+        if x_video_use_update_intent != "confirmed":
+            raise HTTPException(403, "confirmacao de atualizacao ausente")
+
+        download_url = str(payload.get("download_url", ""))
+        expected_digest = payload.get("digest")
+
+        def work(job: Job) -> None:
+            last_percent = -1
+
+            def progress(downloaded: int, total: int, percent: int) -> None:
+                nonlocal last_percent
+                job.result = {"downloaded": downloaded, "total": total, "percent": percent}
+                if percent != last_percent and (percent % 5 == 0 or percent == 100):
+                    job.log.append(f"download: {percent}%")
+                    last_percent = percent
+
+            path = download_update(download_url, expected_digest, progress)
+            job.result = {**(job.result or {}), "ready": True, "path": path.name}
+
+        return {"job_id": start_thread_job(work)}
+
+    @app.post("/api/update/install")
+    def update_install(x_video_use_update_intent: str = Header("")):
+        from updater import install_and_restart
+
+        if x_video_use_update_intent != "confirmed":
+            raise HTTPException(403, "confirmacao de atualizacao ausente")
+
+        try:
+            install_and_restart()
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"ok": True, "message": "O app sera fechado para concluir a atualizacao."}
 
     # ---- Media bin -----------------------------------------------------
 
