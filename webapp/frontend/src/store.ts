@@ -33,6 +33,8 @@ interface EditorState {
   refreshLibraries: () => Promise<void>;
   uploadFiles: (files: File[]) => Promise<void>;
   uploading: boolean;
+  deleteMediaItem: (name: string) => Promise<void>;
+  deleteAudioItem: (name: string) => Promise<void>;
   saveNow: () => Promise<void>;
   scheduleSave: () => void;
 
@@ -115,6 +117,23 @@ export const useEditor = create<EditorState>((set, get) => ({
     } finally {
       set({ uploading: false });
     }
+  },
+
+  // Deletion happens server-side (file removed, timeline clips referencing
+  // it stripped, edl.json resaved), so pull the fresh timeline back down
+  // rather than trying to replay that mutation through withHistory — the
+  // deleted source can't be un-deleted, so there's nothing meaningful to
+  // undo back to.
+  deleteMediaItem: async (name) => {
+    await api.deleteMedia(name);
+    const [timeline, media] = await Promise.all([api.timeline(), api.media()]);
+    set({ timeline, media, history: [], future: [], dirty: false, selection: null });
+  },
+
+  deleteAudioItem: async (name) => {
+    await api.deleteAudio(name);
+    const [timeline, audioFiles] = await Promise.all([api.timeline(), api.audioFiles()]);
+    set({ timeline, audioFiles, history: [], future: [], dirty: false, selection: null });
   },
 
   saveNow: async () => {

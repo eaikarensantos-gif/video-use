@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { api } from "../api";
 import { useEditor } from "../store";
-import { IconCheck, IconMusic, IconUpload, IconVideo } from "../icons";
+import { IconCheck, IconMusic, IconTrash, IconUpload, IconVideo } from "../icons";
 
 /** Polls a transcription job until it's done/errored, then refreshes the
  * media list so `transcribed` badges update. Returns a per-name busy set
@@ -79,10 +79,33 @@ export default function MediaBin() {
   const playhead = useEditor((s) => s.playhead);
   const uploadFiles = useEditor((s) => s.uploadFiles);
   const uploading = useEditor((s) => s.uploading);
+  const deleteMediaItem = useEditor((s) => s.deleteMediaItem);
+  const deleteAudioItem = useEditor((s) => s.deleteAudioItem);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [deleting, setDeleting] = useState<Set<string>>(new Set());
   const { busy, errors, busyAll, allError, transcribeOne, transcribeAll } = useTranscribeJobs();
+
+  async function handleDeleteMedia(name: string) {
+    if (!confirm(`Apagar "${name}"? O arquivo original também será removido da pasta de vídeos.`)) return;
+    setDeleting((d) => new Set(d).add(name));
+    try {
+      await deleteMediaItem(name);
+    } finally {
+      setDeleting((d) => { const n = new Set(d); n.delete(name); return n; });
+    }
+  }
+
+  async function handleDeleteAudio(name: string) {
+    if (!confirm(`Apagar "${name}"? O arquivo original também será removido.`)) return;
+    setDeleting((d) => new Set(d).add(`audio:${name}`));
+    try {
+      await deleteAudioItem(name);
+    } finally {
+      setDeleting((d) => { const n = new Set(d); n.delete(`audio:${name}`); return n; });
+    }
+  }
 
   function handleFiles(fileList: FileList | null) {
     if (!fileList || !fileList.length) return;
@@ -174,6 +197,15 @@ export default function MediaBin() {
               {busy.has(m.name) ? "…" : "Transcribe"}
             </button>
           )}
+          <button
+            className="ghost"
+            style={{ padding: "3px 6px" }}
+            onClick={(e) => { e.stopPropagation(); handleDeleteMedia(m.name); }}
+            disabled={deleting.has(m.name)}
+            title="Delete this file"
+          >
+            <IconTrash size={12} />
+          </button>
         </div>
       ))}
 
@@ -220,6 +252,15 @@ export default function MediaBin() {
                 <div className="name">{a.name}</div>
                 <div className="dur">{fmtDur(a.duration)}</div>
               </div>
+              <button
+                className="ghost"
+                style={{ padding: "3px 6px" }}
+                onClick={(e) => { e.stopPropagation(); handleDeleteAudio(a.name); }}
+                disabled={deleting.has(`audio:${a.name}`)}
+                title="Delete this file"
+              >
+                <IconTrash size={12} />
+              </button>
             </div>
           ))}
         </>

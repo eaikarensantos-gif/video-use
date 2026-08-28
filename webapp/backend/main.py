@@ -126,6 +126,32 @@ def create_app(videos_dir: Path) -> FastAPI:
 
         return {"name": dest.stem, "filename": dest.name, "kind": "video" if ext in VIDEO_EXTS else "audio"}
 
+    @app.delete("/api/media/{name}")
+    def delete_media(name: str):
+        src = project.find_source(name)
+        if not src:
+            raise HTTPException(404, f"unknown media '{name}'")
+        src.unlink()
+
+        for thumb in (project.edit_dir / "thumbnails").glob(f"{name}_*.jpg"):
+            thumb.unlink(missing_ok=True)
+        (project.edit_dir / "waveforms" / f"{name}.json").unlink(missing_ok=True)
+        (project.edit_dir / "transcripts" / f"{name}.json").unlink(missing_ok=True)
+        (project.edit_dir / "proxies" / f"{name}.mp4").unlink(missing_ok=True)
+
+        timeline = project.load_timeline()
+        timeline.get("sources", {}).pop(name, None)
+        removed_clips = 0
+        for track in timeline.get("tracks", []):
+            if track.get("type") != "video":
+                continue
+            before = len(track["clips"])
+            track["clips"] = [c for c in track["clips"] if c.get("source") != name]
+            removed_clips += before - len(track["clips"])
+        project.save_timeline(timeline)
+
+        return {"deleted": name, "removed_clips": removed_clips}
+
     @app.get("/api/media/{name}/thumbnail.jpg")
     def media_thumbnail(name: str, t: float = 0.0):
         src = project.find_source(name)
@@ -256,6 +282,27 @@ def create_app(videos_dir: Path) -> FastAPI:
                 "stream_url": f"/media/source/{p.name}",
             })
         return result
+
+    @app.delete("/api/audio/{name}")
+    def delete_audio(name: str):
+        src = project.find_audio(name)
+        if not src:
+            raise HTTPException(404, f"unknown audio file '{name}'")
+        stream_suffix = f"/media/source/{src.name}"
+        src.unlink()
+        (project.edit_dir / "waveforms" / f"audio_{name}.json").unlink(missing_ok=True)
+
+        timeline = project.load_timeline()
+        removed_clips = 0
+        for track in timeline.get("tracks", []):
+            if track.get("type") != "audio":
+                continue
+            before = len(track["clips"])
+            track["clips"] = [c for c in track["clips"] if c.get("file") != stream_suffix]
+            removed_clips += before - len(track["clips"])
+        project.save_timeline(timeline)
+
+        return {"deleted": name, "removed_clips": removed_clips}
 
     @app.get("/api/audio/{name}/waveform")
     def audio_waveform(name: str):

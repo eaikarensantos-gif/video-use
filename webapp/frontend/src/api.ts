@@ -23,6 +23,14 @@ export const api = {
   stickers: () => fetch("/api/stickers").then((r) => json<Sticker[]>(r)),
   audioFiles: () => fetch("/api/audio").then((r) => json<AudioItem[]>(r)),
   audioWaveform: (name: string) => fetch(`/api/audio/${encodeURIComponent(name)}/waveform`).then((r) => json<number[]>(r)),
+  deleteMedia: (name: string) =>
+    fetch(`/api/media/${encodeURIComponent(name)}`, { method: "DELETE" }).then((r) =>
+      json<{ deleted: string; removed_clips: number }>(r)
+    ),
+  deleteAudio: (name: string) =>
+    fetch(`/api/audio/${encodeURIComponent(name)}`, { method: "DELETE" }).then((r) =>
+      json<{ deleted: string; removed_clips: number }>(r)
+    ),
   uploadMedia: (file: File) => {
     const body = new FormData();
     body.append("file", file);
