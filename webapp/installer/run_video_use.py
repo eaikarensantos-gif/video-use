@@ -132,6 +132,20 @@ def main() -> None:
         )
         return
 
+    if os.environ.get("VIDEO_USE_SMOKETEST"):
+        # CI-only escape hatch (see build-windows-installer.yml): a headless
+        # runner has no interactive desktop session, so launching a real
+        # Edge window here isn't meaningful — the thing actually worth
+        # verifying in CI is that the frozen bundle starts the server at
+        # all, which the health check above already confirmed. Block
+        # forever instead of returning — the server thread is a daemon,
+        # so returning here would exit the whole process (and close the
+        # port) before the CI step gets a chance to poll it externally;
+        # the CI step kills this process once it's done checking.
+        print(f"VIDEO_USE_SMOKETEST: server healthy at {url}")
+        threading.Event().wait()
+        return
+
     edge = find_edge()
     if edge:
         # A dedicated --user-data-dir forces a genuinely separate Edge

@@ -61,17 +61,25 @@ jobs:
           $ErrorActionPreference = "Stop"
           $exe = "dist\video-use\video-use.exe"
           if (-not (Test-Path $exe)) { throw "video-use.exe was not produced by PyInstaller" }
-          # video-use.exe opens an Edge window and blocks on it, which
-          # doesn't exist on a CI runner — just confirm the bundle's
-          # Python entry point imports and starts the server cleanly by
-          # running it with a short timeout via the bundled interpreter,
-          # then check the health endpoint from a second process.
+          # A headless runner has no interactive desktop session to open a
+          # real Edge window in — VIDEO_USE_SMOKETEST makes the frozen exe
+          # start the server and then just block, skipping the browser
+          # launch, so this only tests what CI actually can: that the
+          # PyInstaller bundle imports everything and serves real requests.
+          $env:VIDEO_USE_SMOKETEST = "1"
           $proc = Start-Process -FilePath $exe -PassThru
-          Start-Sleep -Seconds 15
           try {
-            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8756/api/health" -TimeoutSec 5
-            if ($resp.StatusCode -ne 200) { throw "health check returned $($resp.StatusCode)" }
-            Write-Host "Health check OK: $($resp.Content)"
+            $healthy = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              if ($proc.HasExited) { throw "video-use.exe exited early with code $($proc.ExitCode)" }
+              try {
+                $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8756/api/health" -TimeoutSec 2
+                if ($resp.StatusCode -eq 200) { $healthy = $true; Write-Host "Health check OK: $($resp.Content)"; break }
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            if (-not $healthy) { throw "server never answered /api/health" }
           } finally {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
           }
