@@ -37,6 +37,11 @@ if errorlevel 1 (
 )
 
 echo.
+echo   Fechando o video-use, caso esteja aberto (para nao travar
+echo   arquivos que precisam ser atualizados)...
+taskkill /F /IM pythonw.exe >nul 2>nul
+
+echo.
 echo [3/4] Copiando os arquivos atualizados por cima dos antigos...
 set EXTRACTED=
 for /d %%D in ("%TMPDIR%\*") do set EXTRACTED=%%D
@@ -46,10 +51,13 @@ if "%EXTRACTED%"=="" (
     pause
     exit /b 1
 )
-robocopy "%EXTRACTED%" "%~dp0" /E /XF ".env" "video-use-backend.log" /NFL /NDL /NJH /NJS /NC /NS /NP >nul
+set COPYLOG=%~dp0video-use-update.log
+robocopy "%EXTRACTED%" "%~dp0" /E /R:2 /W:2 /XF ".env" "video-use-backend.log" /LOG:"%COPYLOG%" /NFL /NDL /NJH /NC /NS /NP >nul
 if errorlevel 8 (
     echo.
     echo [ERRO] Falha ao copiar os arquivos atualizados.
+    echo Detalhes salvos em (abre com o Bloco de Notas^):
+    echo %COPYLOG%
     pause
     exit /b 1
 )
