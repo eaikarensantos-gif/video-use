@@ -20,9 +20,13 @@ jobs:
           node-version: "20"
 
       - name: Build frontend
+        shell: bash
         working-directory: webapp/frontend
         run: |
-          npm ci
+          set -e
+          # No package-lock.json is committed (gitignored, same as the
+          # local Setup.bat flow) — npm ci requires one, so use install.
+          npm install
           npm run build
 
       - uses: actions/setup-python@v5
@@ -30,11 +34,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install frozen-build Python deps
-        run: pip install -r webapp/installer/requirements-freeze.txt
+        shell: bash
+        run: set -e && pip install -r webapp/installer/requirements-freeze.txt
 
       - name: Download ffmpeg/ffprobe (Windows static build)
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force -Path webapp/installer/ffmpeg | Out-Null
           Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ffmpeg.zip
           Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg-extract -Force
@@ -44,13 +50,15 @@ jobs:
           Copy-Item $probeBin.FullName webapp/installer/ffmpeg/ffprobe.exe
 
       - name: Run PyInstaller
+        shell: bash
         working-directory: webapp/installer
-        run: pyinstaller video_use.spec
+        run: set -e && pyinstaller video_use.spec
 
       - name: Smoke-test the frozen bundle starts and answers /api/health
         shell: pwsh
         working-directory: webapp/installer
         run: |
+          $ErrorActionPreference = "Stop"
           $exe = "dist\video-use\video-use.exe"
           if (-not (Test-Path $exe)) { throw "video-use.exe was not produced by PyInstaller" }
           # video-use.exe opens an Edge window and blocks on it, which
@@ -69,11 +77,15 @@ jobs:
           }
 
       - name: Install Inno Setup
-        run: choco install innosetup --no-progress -y
+        shell: bash
+        run: set -e && choco install innosetup --no-progress -y
 
       - name: Compile installer
+        shell: pwsh
         working-directory: webapp/installer
-        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC.exe exited with code $LASTEXITCODE" }
 
       - uses: actions/upload-artifact@v4
         with:
