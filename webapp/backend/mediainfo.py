@@ -44,7 +44,30 @@ def probe_media(path: Path) -> dict:
         "height": int(vstream["height"]) if vstream and vstream.get("height") else None,
         "fps": fps,
         "has_audio": astream is not None,
+        "vcodec": vstream.get("codec_name") if vstream else None,
     }
+
+
+# Codecs every major browser's <video> tag can decode natively. Anything
+# else (HEVC/h265 above all — the default on a lot of Android and iPhone
+# cameras) plays audio-only in the preview: the <audio> track decodes fine,
+# the <video> track silently fails, leaving a black frame. The final export
+# is unaffected either way — render.py always re-encodes to h264.
+WEB_SAFE_VIDEO_CODECS = {"h264", "vp8", "vp9", "av1"}
+
+
+def generate_preview_proxy(path: Path, out_path: Path) -> None:
+    """Re-encode to h264 for browser preview only — fast/low quality is
+    fine here since it's never what actually gets rendered."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(path),
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
+         "-vf", "scale='min(1280,iw)':-2",
+         "-c:a", "aac", "-b:a", "128k",
+         "-movflags", "+faststart", str(out_path)],
+        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+    )
 
 
 def generate_thumbnail(path: Path, out_path: Path, at: float = 0.0, width: int = 320) -> None:

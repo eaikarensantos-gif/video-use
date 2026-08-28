@@ -34,7 +34,13 @@ from fastapi.responses import FileResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from jobs import Job, get_job, start_render_job, start_thread_job  # noqa: E402
-from mediainfo import generate_thumbnail, generate_waveform_peaks, probe_media  # noqa: E402
+from mediainfo import (  # noqa: E402
+    WEB_SAFE_VIDEO_CODECS,
+    generate_preview_proxy,
+    generate_thumbnail,
+    generate_waveform_peaks,
+    probe_media,
+)
 from project import AUDIO_EXTS, VIDEO_EXTS, Project  # noqa: E402
 
 
@@ -65,15 +71,35 @@ def create_app(videos_dir: Path) -> FastAPI:
                 info = probe_media(p)
             except Exception:
                 info = {}
+            vcodec = info.get("vcodec")
+            web_safe = vcodec is None or vcodec in WEB_SAFE_VIDEO_CODECS
             result.append({
                 "name": name,
                 "filename": p.name,
                 **info,
                 "thumbnail_url": f"/api/media/{name}/thumbnail.jpg",
-                "stream_url": f"/media/source/{p.name}",
+                # HEVC/h265 and other codecs browsers can't decode play
+                # audio-only (black frame) via the raw file — route those
+                # through a lazily-transcoded h264 proxy instead. Doesn't
+                # affect export: render.py always re-encodes from the
+                # original source regardless of this.
+                "stream_url": f"/media/source/{p.name}" if web_safe else f"/api/media/{name}/proxy.mp4",
                 "transcribed": (project.edit_dir / "transcripts" / f"{name}.json").exists(),
             })
         return result
+
+    @app.get("/api/media/{name}/proxy.mp4")
+    def media_proxy(name: str):
+        src = project.find_source(name)
+        if not src:
+            raise HTTPException(404, f"unknown media '{name}'")
+        cache = project.edit_dir / "proxies" / f"{name}.mp4"
+        if not cache.exists():
+            try:
+                generate_preview_proxy(src, cache)
+            except Exception as exc:
+                raise HTTPException(500, f"preview conversion failed: {exc}") from exc
+        return FileResponse(cache, media_type="video/mp4")
 
     @app.post("/api/media/upload")
     async def upload_media(file: UploadFile = File(...)):
