@@ -112,7 +112,7 @@ cd webapp/frontend && npm run dev   # http://localhost:5173, proxies /api and /m
   - **Text** — content, position, font size/color, background chip, **animation** (fade or slide-up entrance).
   - **Sticker** — position (x/y) and size, as fractions of the frame.
   - **Audio** — start/duration, volume, fade in/out.
-- **Export** — preview (fast, 720p) or final (1080p, loudness-normalized), with a live render log and a download link when done.
+- **Export** — preview (fast, 720p) or final (1080p, loudness-normalized), with a live render log and a download link when done. The same Export dialog also has **Export EDL**, a CMX3600 Edit Decision List for handing the cut off to DaVinci Resolve, Premiere Pro, or Final Cut Pro — importable by all three. It carries clip order and exact source in/out points only (cuts); grades, transitions, text/overlays, Ken Burns, speed changes and music don't survive the format and aren't meant to — redo those with the target NLE's own (better) tools. The exported file notes anything dropped per clip as `* NOTE:` comments, and includes `* FROM CLIP NAME:` comments so the NLE can auto-relink source media by filename.
 
 ## What's intentionally out of scope (v1)
 

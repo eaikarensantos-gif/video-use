@@ -36,6 +36,17 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
   }
 
   const running = status?.status === "running" || status?.status === "queued";
+  const [edlBusy, setEdlBusy] = useState(false);
+
+  async function exportEdl() {
+    setEdlBusy(true);
+    try {
+      await saveNow();
+      window.location.href = "/api/export-edl";
+    } finally {
+      setEdlBusy(false);
+    }
+  }
 
   return (
     <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget && !running) onClose(); }}>
@@ -57,6 +68,16 @@ export default function ExportModal({ onClose }: { onClose: () => void }) {
             <div className="actions">
               <button className="ghost" onClick={onClose}>Cancel</button>
               <button className="primary" onClick={start}>Start export</button>
+            </div>
+            <div className="dur" style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+              Editing in DaVinci Resolve, Premiere Pro, or Final Cut instead? Export a CMX3600 EDL
+              with the cut order and exact in/out points — grades, transitions, text, Ken Burns,
+              speed and music don't carry over (the exported file notes what to redo in the NLE).
+            </div>
+            <div className="actions">
+              <button className="ghost" onClick={exportEdl} disabled={edlBusy}>
+                {edlBusy ? "Exportando…" : "Export EDL (DaVinci / Premiere / FCP)"}
+              </button>
             </div>
           </>
         )}

@@ -322,6 +322,24 @@ def create_app(videos_dir: Path) -> FastAPI:
             result["output_url"] = f"/media/edit/{rel.as_posix()}"
         return result
 
+    @app.get("/api/export-edl")
+    def export_edl():
+        """CMX3600 EDL for DaVinci Resolve / Premiere Pro / Final Cut Pro —
+        cuts only (source in/out + order). Grades, transitions, text/overlays,
+        Ken Burns, speed, and music don't survive the format; see the
+        `* NOTE:` comments the exporter writes for anything dropped."""
+        from bridge import timeline_to_edl
+        from export_edl import build_cmx_edl
+
+        timeline = project.load_timeline()
+        project.save_timeline(timeline)  # ensure edl.json reflects latest edits
+        edl = timeline_to_edl(timeline, project.videos_dir)
+        fps = timeline.get("canvas", {}).get("fps", 24)
+        text = build_cmx_edl(edl, fps=fps, title=project.videos_dir.name)
+        out_path = project.edit_dir / "export.edl"
+        out_path.write_text(text)
+        return FileResponse(out_path, media_type="text/plain", filename="video-use-export.edl")
+
     # ---- Static files: raw sources, edit dir outputs, frontend build -----
 
     if project.videos_dir.exists():
