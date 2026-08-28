@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { AutoEditRange, JobStatus } from "../types";
+import type { AiProviderStatus, AutoEditRange, JobStatus } from "../types";
 import { useEditor } from "../store";
 
-/** Real AI auto-edit: sends a brief + the transcribed footage to Claude and
+/** Real AI auto-edit: sends a brief + the transcribed footage to the configured provider and
  * proposes a cut list. Nothing is written to the timeline until the user
  * reviews the proposal and explicitly clicks "Apply" — this mirrors the
  * chat flow's "propose a strategy, then wait for confirmation" rule. */
@@ -17,12 +17,14 @@ export default function AiEditorModal({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState<JobStatus<{ ranges: AutoEditRange[] }> | null>(null);
   const [ranges, setRanges] = useState<AutoEditRange[] | null>(null);
   const [included, setIncluded] = useState<Set<number>>(new Set());
+  const [provider, setProvider] = useState<AiProviderStatus | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
   const untranscribed = media.filter((m) => !m.transcribed);
 
   useEffect(() => {
+    api.aiStatus().then(setProvider).catch(() => setProvider({ provider: null, model: null, configured: false }));
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
@@ -70,6 +72,11 @@ export default function AiEditorModal({ onClose }: { onClose: () => void }) {
     <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget && !running) onClose(); }}>
       <div className="modal wide">
         <h2>AI auto-edit</h2>
+        <div className={provider?.configured ? "ai-provider-status ok" : "ai-provider-status"}>
+          {provider?.configured
+            ? `IA: ${provider.provider === "openai" ? "OpenAI" : "Anthropic"} · ${provider.model}`
+            : "Nenhuma API configurada. Adicione OPENAI_API_KEY ao arquivo .env e reinicie o app."}
+        </div>
 
         {!jobId && (
           <>
@@ -100,7 +107,7 @@ export default function AiEditorModal({ onClose }: { onClose: () => void }) {
             </div>
             <div className="actions">
               <button className="ghost" onClick={onClose}>Cancel</button>
-              <button className="primary" onClick={generate} disabled={!brief.trim()}>
+              <button className="primary" onClick={generate} disabled={!brief.trim() || !provider?.configured}>
                 Propose cut
               </button>
             </div>
@@ -116,7 +123,7 @@ export default function AiEditorModal({ onClose }: { onClose: () => void }) {
               <div className="fill" style={{ width: running ? "60%" : status?.status === "done" ? "100%" : "0%" }} />
             </div>
             <div className="log" ref={logRef}>
-              {(status?.log ?? []).join("\n") || "asking Claude to read the transcripts…"}
+              {(status?.log ?? []).join("\n") || "pedindo à IA para analisar as transcrições…"}
             </div>
             {status?.status === "error" && (
               <div style={{ color: "var(--danger)", fontSize: 12, marginTop: 6 }}>Error: {status.error}</div>

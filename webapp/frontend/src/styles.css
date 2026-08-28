@@ -281,5 +281,7 @@ button.transcript-word.removed { color: #ff8b8b; background: rgba(255, 92, 92, 0
 .transcript-count { margin-right: auto; color: var(--text-2); font-size: 11px; align-self: center; }
 .progress-bar { height: 6px; border-radius: 3px; background: var(--bg-3); overflow: hidden; }
 .progress-bar .fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+.ai-provider-status { color: var(--danger); background: rgba(255, 92, 92, 0.08); border: 1px solid rgba(255, 92, 92, 0.2); border-radius: 6px; padding: 7px 9px; margin: -5px 0 12px; font-size: 11px; }
+.ai-provider-status.ok { color: #7fe0a8; background: rgba(127, 224, 168, 0.07); border-color: rgba(127, 224, 168, 0.2); }
 
 .loading-screen { display: flex; align-items: center; justify-content: center; height: 100vh; color: var(--text-2); font-size: 13px; }

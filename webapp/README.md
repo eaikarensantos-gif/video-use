@@ -81,7 +81,9 @@ else in the editor works fine without either:
 
 ```
 ELEVENLABS_API_KEY=...   # for one-click transcription
-ANTHROPIC_API_KEY=...    # for AI auto-edit
+OPENAI_API_KEY=...       # preferred: AI auto-edit + caption translation
+OPENAI_MODEL=gpt-5.4-mini
+ANTHROPIC_API_KEY=...    # optional fallback
 ```
 
 - **Transcription** — a **Transcribe** button per clip (or **Transcribe all**)
@@ -90,8 +92,8 @@ ANTHROPIC_API_KEY=...    # for AI auto-edit
   auto-subtitles on export and the AI auto-edit below.
 - **AI auto-edit** (toolbar, **✨ AI Edit**) — write a brief ("60s highlight,
   upbeat, cut the small talk"), optionally a target duration, and it sends
-  your transcribed footage to Claude (`claude-opus-5`) the same way
-  `SKILL.md`'s editor sub-agent does. The model proposes a list of cuts
+  your transcribed footage to OpenAI (`gpt-5.4-mini` by default), with
+  Anthropic as a fallback when only its key is configured. The model proposes a list of cuts
   (source, in/out, a short label, and why); you review, uncheck anything you
   don't want, and only then click **Apply** to write them to the video track.
   Nothing is ever applied automatically.
@@ -132,7 +134,7 @@ cd webapp/frontend && npm run dev   # http://localhost:5173, proxies /api and /m
   - **Sticker** — position (x/y) and size, as fractions of the frame.
   - **Audio** — start/duration, volume, fade in/out.
 - **Export** — preview (fast, 720p) or final (1080p, loudness-normalized), with a live render log and a download link when done. The same Export dialog also has **Export EDL**, a CMX3600 Edit Decision List for handing the cut off to DaVinci Resolve, Premiere Pro, or Final Cut Pro — importable by all three. It carries clip order and exact source in/out points only (cuts); grades, transitions, text/overlays, Ken Burns, speed changes and music don't survive the format and aren't meant to — redo those with the target NLE's own (better) tools. The exported file notes anything dropped per clip as `* NOTE:` comments, and includes `* FROM CLIP NAME:` comments so the NLE can auto-relink source media by filename.
-  - **Subtitle style + language** — when "Burn subtitles" is checked, a panel opens for size, color, position (bottom/middle/top — bottom respects the platform safe-zone margin Reels/Shorts/TikTok UI needs), a background box, and an UPPERCASE toggle. **Subtitle language** translates the burned-in captions into a different language than the footage's own audio via Claude, cached per source so translating once doesn't re-spend API calls on the next export — timing follows sentence boundaries rather than exact per-word sync, since translation changes word count and order. Requires `ANTHROPIC_API_KEY`. Leaving it on "Original" behaves exactly as before.
+  - **Subtitle style + language** — when "Burn subtitles" is checked, a panel opens for size, color, position (bottom/middle/top — bottom respects the platform safe-zone margin Reels/Shorts/TikTok UI needs), a background box, and an UPPERCASE toggle. **Subtitle language** translates the burned-in captions with the same configured OpenAI/Anthropic provider, cached per source so translating once doesn't re-spend API calls on the next export — timing follows sentence boundaries rather than exact per-word sync, since translation changes word count and order. Leaving it on "Original" behaves exactly as before.
 
 ## What's intentionally out of scope (v1)
 

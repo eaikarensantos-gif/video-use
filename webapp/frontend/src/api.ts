@@ -1,4 +1,4 @@
-import type { AudioItem, CleanupResult, ExportStatus, GradePreset, JobStatus, MediaItem, Sticker, SubtitleStyle, Timeline, Transcript, UpdateInfo } from "./types";
+import type { AiProviderStatus, AudioItem, CleanupResult, ExportStatus, GradePreset, JobStatus, MediaItem, Sticker, SubtitleStyle, Timeline, Transcript, UpdateInfo } from "./types";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -80,6 +80,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ brief, target_duration: targetDuration ?? null }),
     }).then((r) => json<{ job_id: string }>(r)),
+  aiStatus: () => fetch("/api/ai/status").then((r) => json<AiProviderStatus>(r)),
   jobStatus: <T = any>(jobId: string) => fetch(`/api/jobs/${jobId}`).then((r) => json<JobStatus<T>>(r)),
   detectCleanup: (name: string, clipIn: number, clipOut: number, silenceThreshold = 0.6) =>
     fetch(`/api/media/${encodeURIComponent(name)}/detect-cleanup`, {

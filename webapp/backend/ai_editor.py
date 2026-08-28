@@ -1,5 +1,4 @@
-"""AI-driven auto-edit: sends the packed transcript + a user brief to Claude
-via the Anthropic API and gets back a proposed cut list (EDL ranges).
+"""AI-driven auto-edit using OpenAI (preferred) or Anthropic (fallback).
 
 This is the same job SKILL.md's "editor sub-agent" does inside a Claude Code
 chat session — wired here as a direct API call so the visual editor can
@@ -17,11 +16,12 @@ from pathlib import Path
 
 from pack_transcripts import pack_one_file, render_markdown
 
-DEFAULT_MODEL = "claude-opus-5"
+DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
+DEFAULT_ANTHROPIC_MODEL = "claude-opus-5"
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-def load_anthropic_key() -> str:
+def load_env_value(name: str) -> str:
     for candidate in [_REPO_ROOT / ".env", Path(".env")]:
         if candidate.exists():
             for line in candidate.read_text().splitlines():
@@ -29,12 +29,17 @@ def load_anthropic_key() -> str:
                 if not line or line.startswith("#") or "=" not in line:
                     continue
                 k, v = line.split("=", 1)
-                if k.strip() == "ANTHROPIC_API_KEY":
+                if k.strip() == name:
                     return v.strip().strip('"').strip("'")
-    v = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not v:
-        raise RuntimeError("ANTHROPIC_API_KEY not found in .env or environment")
-    return v
+    return os.environ.get(name, "").strip()
+
+
+def configured_provider() -> dict:
+    if load_env_value("OPENAI_API_KEY"):
+        return {"provider": "openai", "model": load_env_value("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL, "configured": True}
+    if load_env_value("ANTHROPIC_API_KEY"):
+        return {"provider": "anthropic", "model": load_env_value("ANTHROPIC_MODEL") or DEFAULT_ANTHROPIC_MODEL, "configured": True}
+    return {"provider": None, "model": None, "configured": False}
 
 
 def pack_all_transcripts(edit_dir: Path) -> str:
@@ -66,8 +71,7 @@ RULES:
 - Skip verbal slips, false starts, and filler ("um", "uh", "like") unless removing \
 them would cut a moment the brief asked you to keep.
 
-Respond with ONLY a JSON array (no markdown fences, no prose before or after). Each \
-element:
+Respond with ONLY a JSON object (no markdown fences or prose) with a "cuts" array. Each element:
 {{"source": "<source name from the transcripts above>", "start": <seconds, number>, \
 "end": <seconds, number>, "beat": "<short label>", "reason": "<one line why>"}}
 """
@@ -80,13 +84,18 @@ def build_prompt(packed: str, brief: str, target_duration: float | None) -> str:
 
 def parse_ranges(text: str) -> list[dict]:
     text = text.strip()
-    # Strip accidental markdown fences / stray prose if the model added them anyway.
-    match = re.search(r"\[.*\]", text, re.DOTALL)
-    if not match:
-        raise RuntimeError(f"could not find a JSON array in the model's response: {text[:300]!r}")
-    data = json.loads(match.group(0))
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}|\[.*\]", text, re.DOTALL)
+        if not match:
+            raise RuntimeError(f"could not find JSON in the model response: {text[:300]!r}")
+        data = json.loads(match.group(0))
+    if isinstance(data, dict):
+        data = data.get("cuts")
     if not isinstance(data, list):
-        raise RuntimeError("model response was not a JSON array")
+        raise RuntimeError("model response did not contain a cuts array")
     ranges: list[dict] = []
     for item in data:
         if not isinstance(item, dict) or not {"source", "start", "end"} <= item.keys():
@@ -122,22 +131,43 @@ def run_auto_edit(
     target_duration: float | None = None,
     log: "callable[[str], None]" = print,
 ) -> list[dict]:
-    import anthropic
-
     log("reading transcripts…")
     packed = pack_all_transcripts(edit_dir)
-
-    log(f"asking {DEFAULT_MODEL} to propose a cut…")
-    client = anthropic.Anthropic(api_key=load_anthropic_key())
     prompt = build_prompt(packed, brief, target_duration)
-    response = client.messages.create(
-        model=DEFAULT_MODEL,
-        max_tokens=8000,
-        thinking={"type": "adaptive"},
-        output_config={"effort": "high"},
-        messages=[{"role": "user", "content": prompt}],
-    )
-    text = "".join(b.text for b in response.content if b.type == "text")
+    provider = configured_provider()
+    if not provider["configured"]:
+        raise RuntimeError("Configure OPENAI_API_KEY (recommended) or ANTHROPIC_API_KEY in the .env file")
+
+    log(f"asking {provider['provider']} / {provider['model']} to propose a cut…")
+    if provider["provider"] == "openai":
+        from openai import OpenAI
+
+        schema = {
+            "type": "object", "additionalProperties": False,
+            "properties": {"cuts": {"type": "array", "items": {
+                "type": "object", "additionalProperties": False,
+                "properties": {
+                    "source": {"type": "string"}, "start": {"type": "number"}, "end": {"type": "number"},
+                    "beat": {"type": "string"}, "reason": {"type": "string"},
+                },
+                "required": ["source", "start", "end", "beat", "reason"],
+            }}}, "required": ["cuts"],
+        }
+        client = OpenAI(api_key=load_env_value("OPENAI_API_KEY"))
+        response = client.responses.create(
+            model=provider["model"], input=prompt,
+            text={"format": {"type": "json_schema", "name": "video_edit_plan", "strict": True, "schema": schema}},
+        )
+        text = response.output_text
+    else:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=load_env_value("ANTHROPIC_API_KEY"))
+        response = client.messages.create(
+            model=provider["model"], max_tokens=8000, thinking={"type": "adaptive"},
+            output_config={"effort": "high"}, messages=[{"role": "user", "content": prompt}],
+        )
+        text = "".join(b.text for b in response.content if b.type == "text")
     if not text.strip():
         raise RuntimeError("model returned no text output — check the API response for a refusal")
 

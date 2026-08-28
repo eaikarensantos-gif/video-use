@@ -159,6 +159,12 @@ export interface CleanupResult {
   keep_ranges: { in: number; out: number }[];
 }
 
+export interface AiProviderStatus {
+  provider: "openai" | "anthropic" | null;
+  model: string | null;
+  configured: boolean;
+}
+
 export interface TranscriptWord {
   id: string;
   text: string;

@@ -318,6 +318,12 @@ def create_app(videos_dir: Path) -> FastAPI:
 
     # ---- AI auto-edit (real Anthropic API call, proposes cuts for review) --
 
+    @app.get("/api/ai/status")
+    def ai_status():
+        from ai_editor import configured_provider
+
+        return configured_provider()
+
     @app.post("/api/ai/auto-edit")
     def ai_auto_edit(brief: str = Body(..., embed=True), target_duration: float | None = Body(None, embed=True)):
         def work(job: Job) -> None:
@@ -439,16 +445,18 @@ def create_app(videos_dir: Path) -> FastAPI:
     # ---- Export ------------------------------------------------------------
 
     def _ensure_translated_transcripts(edl: dict, language: str) -> None:
-        """Translate every used source's transcript into `language`
-        (Claude, cached to disk) before the render job starts — kept out
-        of helpers/render.py since that script has no Anthropic
-        dependency. Raises RuntimeError (surfaced as a 400) if there's no
+        """Translate every used source transcript with the configured provider.
+        Raises RuntimeError (surfaced as a 400) if there's no
         API key; sources with no transcript at all are silently skipped,
         same as they are for subtitles in the original language."""
-        from ai_editor import load_anthropic_key
+        from ai_editor import configured_provider, load_env_value
         from translate_captions import translate_transcript
 
-        api_key = load_anthropic_key()
+        provider = configured_provider()
+        if not provider["configured"]:
+            raise RuntimeError("Configure OPENAI_API_KEY or ANTHROPIC_API_KEY to translate captions")
+        key_name = "OPENAI_API_KEY" if provider["provider"] == "openai" else "ANTHROPIC_API_KEY"
+        api_key = load_env_value(key_name)
         transcripts_dir = project.edit_dir / "transcripts"
         used_sources = {r["source"] for r in edl.get("ranges", [])}
         for name in used_sources:
@@ -456,7 +464,7 @@ def create_app(videos_dir: Path) -> FastAPI:
             if not original.exists():
                 continue
             cache = transcripts_dir / f"{name}.{language}.json"
-            translate_transcript(original, language, api_key, cache)
+            translate_transcript(original, language, api_key, cache, provider["provider"], provider["model"])
 
     @app.post("/api/export")
     def export(

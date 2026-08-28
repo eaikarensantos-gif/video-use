@@ -1,6 +1,6 @@
-"""Translate a source's transcript into another language for burned-in
-captions, via Claude — kept out of helpers/render.py on purpose, since
-that script has no Anthropic dependency and is also the chat flow's/CLI's
+"""Translate a source transcript for burned-in captions via the configured AI.
+
+Kept out of helpers/render.py because that script has no provider SDK dependency and is also the chat flow's/CLI's
 render path, which shouldn't suddenly require an API key it doesn't use.
 
 LLM translation doesn't preserve word count or order, so exact per-word
@@ -28,6 +28,8 @@ def translate_transcript(
     target_language: str,
     api_key: str,
     cache_path: Path,
+    provider: str = "openai",
+    model: str = "gpt-5.4-mini",
 ) -> Path:
     """Translate transcript_path into target_language, caching the result
     at cache_path. Returns cache_path (existing or freshly written)."""
@@ -42,32 +44,31 @@ def translate_transcript(
 
     out_words: list[dict] = []
     if phrases:
-        out_words = _translate_phrases(phrases, target_language, api_key)
+        out_words = _translate_phrases(phrases, target_language, api_key, provider, model)
 
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(json.dumps({"words": out_words, "language": target_language}, indent=2))
     return cache_path
 
 
-def _translate_phrases(phrases: list[dict], target_language: str, api_key: str) -> list[dict]:
-    import anthropic
-
+def _translate_phrases(phrases: list[dict], target_language: str, api_key: str, provider: str, model: str) -> list[dict]:
     numbered = "\n".join(f"{i + 1}. {p['text']}" for i, p in enumerate(phrases))
-    client = anthropic.Anthropic(api_key=api_key)
-    message = client.messages.create(
-        model="claude-opus-5",
-        max_tokens=4096,
-        messages=[{
-            "role": "user",
-            "content": (
-                f"Translate each numbered line into {target_language}. Reply with "
-                "the same numbering, one translation per line, nothing else — no "
-                "preamble, no notes, no quotes around the text. Keep the tone "
-                "casual/spoken, matching the original.\n\n" + numbered
-            ),
-        }],
+    prompt = (
+        f"Translate each numbered line into {target_language}. Reply with the same numbering, "
+        "one translation per line, nothing else. Keep the tone casual/spoken.\n\n" + numbered
     )
-    text = "".join(block.text for block in message.content if getattr(block, "type", None) == "text")
+    if provider == "openai":
+        from openai import OpenAI
+
+        response = OpenAI(api_key=api_key).responses.create(model=model, input=prompt)
+        text = response.output_text
+    else:
+        import anthropic
+
+        message = anthropic.Anthropic(api_key=api_key).messages.create(
+            model=model, max_tokens=4096, messages=[{"role": "user", "content": prompt}],
+        )
+        text = "".join(block.text for block in message.content if getattr(block, "type", None) == "text")
 
     translated: dict[int, str] = {}
     for line in text.strip().splitlines():

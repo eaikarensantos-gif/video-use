@@ -22,7 +22,7 @@ completely unmodified whether running from source or frozen:
 main.py and everything under helpers/ are bundled as loose data files
 (not analyzed/frozen modules) specifically so `Path(__file__)` keeps
 resolving to a real path on disk — third-party deps (fastapi, uvicorn,
-anthropic, requests, numpy, multipart) are imported here first, at the
+anthropic, openai, requests, numpy, multipart) are imported here first, at the
 top level, so PyInstaller's analyzer bundles them properly and they're
 already in sys.modules by the time main.py imports them itself.
 """
@@ -71,6 +71,7 @@ import numpy  # noqa: F401
 import requests  # noqa: F401
 import uvicorn
 import anthropic  # noqa: F401
+import openai  # noqa: F401
 
 HOST = "127.0.0.1"
 PORT = 8756
