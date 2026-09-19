@@ -14,7 +14,8 @@ Drop raw footage in a folder, chat with Claude Code, get `final.mp4` back. Works
 - **Auto color grades** every segment (warm cinematic, neutral punch, or any custom ffmpeg chain)
 - **30ms audio fades** at every cut so you never hear a pop
 - **Burns subtitles** in your style — 2-word UPPERCASE chunks by default, fully customizable
-- **Generates animation overlays** via [HyperFrames](https://github.com/heygen-com/hyperframes), [Remotion](https://www.remotion.dev/), [Manim](https://www.manim.community/), or PIL — spawned in parallel sub-agents, one per animation
+- **Generates animation overlays** via [HyperFrames](https://github.com/heygen-com/hyperframes), [Remotion](https://www.remotion.dev/) (vendored motion-design ruleset in `skills/remotion-motion-graphics/`), [Manim](https://www.manim.community/), or PIL — spawned in parallel sub-agents, one per animation
+- **Watches reference videos** — drop a URL or a competitor edit and it downloads/transcribes/extracts frames to match the style before cutting (vendored in `skills/claude-video/`)
 - **Self-evaluates the rendered output** at every cut boundary before showing you anything
 - **Persists session memory** in `project.md` so next week's session picks up where you left off
 
